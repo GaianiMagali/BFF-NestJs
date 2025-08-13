@@ -1,0 +1,40 @@
+
+{
+    "$schema": "https://json.schemastore.org/nest-cli",
+    "collection": "@nestjs/schematics",
+    "sourceRoot": "src",
+    "compilerOptions": {
+        "deleteOutDir": true,
+        "tsConfigPath": "tsconfig.json",
+        "watchMode": false,
+        "assets": [
+            {
+                "include": "**/*.json",
+                "outDir": "dist"
+            }
+        ],
+        "plugins": [
+            {
+                "name": "@nestjs/swagger",
+                "options": {
+                    "classValidatorShim": false,
+                    "introspectComments": true
+                }
+            }
+        ]
+    },
+    "projects": {
+        "auth-bff": {
+            "type": "application",
+            "root": "",
+            "entryFile": "main",
+            "sourceRoot": "src",
+            "compilerOptions": {
+                "tsConfigPath": "tsconfig.json"
+            }
+        }
+    },
+    "monorepo": false,
+    "root": "",
+    "entryFile": "main"
+}
