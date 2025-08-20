@@ -26,18 +26,9 @@ export class Token {
     return this.payload.iat;
   }
 
-  get getIssuedAt(): Date {
-    return new Date(this.payload.iat * 1000);
-  }
-
   // Getter para obtener el payload completo
   get getPayload(): any {
     return { ...this.payload };
-  }
-
-  // Método para obtener cualquier claim del payload
-  getClaim(claimName: string): any {
-    return this.payload[claimName];
   }
  
   /**

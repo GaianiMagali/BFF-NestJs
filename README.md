@@ -42,23 +42,238 @@ Backend For Frontend (BFF) desarrollado con NestJS siguiendo patrones de **Arqui
 └─────────────────────┘
 ```
 
-### Flujo de Validación
+## 🔄 Flujo Detallado de Datos
+
+### Arquitectura de Capas
+
+```mermaid
+graph TB
+    subgraph "🌐 Cliente"
+        Client[Frontend/Postman]
+    end
+    
+    subgraph "🎨 PRESENTATION Layer"
+        Controller[AuthController]
+        Guard[TokenValidationGuard]
+    end
+    
+    subgraph "📋 APPLICATION Layer"  
+        UseCase[ValidateTokenUseCase]
+        DTOs[DTOs Response]
+    end
+    
+    subgraph "📊 DOMAIN Layer"
+        Entity[Token Entity]
+        Exceptions[Domain Exceptions]
+    end
+    
+    subgraph "🔧 INFRASTRUCTURE Layer"
+        JWTAdapter[JWT Adapter]
+        ValidationAdapter[Token Validation Adapter]
+        UserAdapter[User API Adapter]
+        Filter[Exception Filter]
+    end
+    
+    subgraph "🌍 External Services"
+        ValidationAPI[Token Validation API]
+        UserAPI[User Info API]
+    end
+
+    Client --> Controller
+    Controller --> Guard
+    Guard --> UseCase
+    UseCase --> Entity
+    UseCase --> JWTAdapter
+    UseCase --> ValidationAdapter
+    UseCase --> UserAdapter
+    ValidationAdapter --> ValidationAPI
+    UserAdapter --> UserAPI
+    Exceptions --> Filter
+    DTOs --> Controller
+```
+
+### Flujo Paso a Paso con Componentes
 
 ```mermaid
 sequenceDiagram
-    participant F as Frontend
-    participant BFF as BFF
-    participant VA as Validation API
-    participant UA as User API
+    participant C as 🌐 Cliente
+    participant G as 🛡️ Guard
+    participant UC as 📋 UseCase
+    participant JWT as 🔐 JWT Adapter
+    participant VA as ✅ Validation Adapter
+    participant UA as 👤 User Adapter
+    participant E as 📊 Token Entity
+    participant Ctrl as 🎯 Controller
+    participant F as 🚨 Exception Filter
+    participant ExtAPI1 as 🌍 Validation API
+    participant ExtAPI2 as 🌍 User API
 
-    F->>BFF: GET /api (Bearer token)
-    BFF->>BFF: 1. Decode JWT
-    BFF->>BFF: 2. Check expiration
-    BFF->>VA: 3. Validate & renew token
-    VA->>BFF: Renewed token
-    BFF->>UA: 4. Get user info (renewed token)
-    UA->>BFF: User data
-    BFF->>F: Complete response
+    Note over C: 1. Request con Token
+    C->>G: GET /api<br/>Authorization: Bearer <token>
+    
+    Note over G: 2. Extracción y Validación
+    G->>UC: validateToken(token)
+    
+    Note over UC: 3. Decodificación JWT
+    UC->>JWT: validateToken(token)
+    JWT->>E: new Token(payload)
+    E->>UC: Token entity
+    
+    alt Token expirado
+        UC->>F: throw TokenExpiredException
+        F->>C: 401 + error details
+    else Token válido
+        Note over UC: 4. Validación Externa
+        UC->>VA: validateAndRenewToken(token)
+        VA->>ExtAPI1: POST /validate
+        ExtAPI1->>VA: renewed_token
+        VA->>UC: renewed_token
+        
+        Note over UC: 5. Obtener Info Usuario
+        UC->>UA: getUserInfo(renewed_token)
+        UA->>ExtAPI2: GET /users/1
+        ExtAPI2->>UA: user_data
+        UA->>UC: user_data
+        
+        Note over UC: 6. Respuesta Exitosa
+        UC->>G: { isValid: true, token, userInfo }
+        G->>Ctrl: request.user = token<br/>request.userInfo = userInfo
+        Ctrl->>C: 200 + ValidateTokenResponseDto
+    end
+```
+
+### Flujo de Datos por Capa
+
+```mermaid
+flowchart LR
+    subgraph Input["📥 INPUT"]
+        A[Authorization: Bearer eyJ...]
+    end
+    
+    subgraph Presentation["🎨 PRESENTATION"]
+        B[Guard extrae token]
+        C[Controller formatea respuesta]
+    end
+    
+    subgraph Application["📋 APPLICATION"]
+        D[UseCase orquesta validación]
+        E[DTOs estructuran datos]
+    end
+    
+    subgraph Domain["📊 DOMAIN"]
+        F[Token Entity valida payload]
+        G[Exceptions manejan errores]
+    end
+    
+    subgraph Infrastructure["🔧 INFRASTRUCTURE"]
+        H[JWT Adapter decodifica]
+        I[HTTP Adapters llaman APIs]
+        J[Exception Filter formatea errores]
+    end
+    
+    subgraph External["🌍 EXTERNAL"]
+        K[Validation API renueva token]
+        L[User API retorna datos]
+    end
+    
+    subgraph Output["📤 OUTPUT"]
+        M[JSON Response estructurado]
+    end
+
+    A --> B
+    B --> D
+    D --> F
+    D --> H
+    D --> I
+    H --> D
+    I --> K
+    I --> L
+    K --> I
+    L --> I
+    I --> D
+    F --> D
+    D --> B
+    B --> C
+    C --> E
+    E --> M
+    
+    G --> J
+    J --> M
+```
+
+## 📊 Datos que Viajan entre Componentes
+
+### 🔄 Transformación de Datos
+
+| Componente | Input | Output | Propósito |
+|------------|-------|--------|-----------|
+| **Client** | `Authorization: Bearer eyJhbGci...` | - | Envía token en header |
+| **Guard** | `"Bearer eyJhbGci..."` | `{ isValid: true, token: Token, userInfo: {...} }` | Extrae y valida token |
+| **JWT Adapter** | `"eyJhbGci..."` | `Token { sub: "123", exp: 1703980800 }` | Decodifica sin verificar firma |
+| **Token Entity** | `{ sub: "123", username: "john", exp: 1703980800 }` | `Token entity methods` | Encapsula lógica del token |
+| **Validation Adapter** | `"eyJhbGci..."` | `"renewed_eyJhbGci..."` | Renueva token vía API externa |
+| **User Adapter** | `"renewed_eyJhbGci..."` | `{ id: 1, name: "John", email: "..." }` | Obtiene info del usuario |
+| **UseCase** | `"eyJhbGci..."` | `{ isValid: true, token, userInfo, message }` | Orquesta todo el proceso |
+| **Controller** | `request.user, request.userInfo` | `ValidateTokenResponseDto` | Formatea respuesta final |
+
+### 📤 Respuesta Final
+
+```json
+{
+  "valid": true,
+  "message": "Token validated, renewed, and user info retrieved",
+  "tokenInfo": {
+    "sub": "12345",
+    "username": "john_doe", 
+    "exp": 1703980800,
+    "iat": 1703977200,
+    "payload": { "sub": "12345", "username": "john_doe", "exp": 1703980800 }
+  },
+  "externalUserInfo": {
+    "id": 1,
+    "name": "Leanne Graham",
+    "username": "Bret", 
+    "email": "Sincere@april.biz",
+    "phone": "1-770-736-8031 x56442",
+    "website": "hildegard.org",
+    "company": { "name": "Romaguera-Crona" },
+    "address": { "street": "Kulas Light", "city": "Gwenborough" }
+  }
+}
+```
+
+### 🚨 Respuesta de Error
+
+```json
+{
+  "error": true,
+  "statusCode": 401,
+  "errorCode": "TOKEN_EXPIRED",
+  "message": "Token has expired",
+  "timestamp": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### 🔍 Adaptadores en Detalle
+
+#### JWT Adapter
+```typescript
+// Input:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+// Output: Token { payload: { sub: "123", exp: 1703980800 } }
+```
+
+#### Token Validation Adapter  
+```typescript
+// Input:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+// HTTP:   POST https://httpbin.org/post
+// Output: "renewed_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### User API Adapter
+```typescript
+// Input:  "renewed_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+// HTTP:   GET https://jsonplaceholder.typicode.com/users/1
+// Output: { id: 1, name: "Leanne Graham", email: "..." }
 ```
 
 ## 🛠️ Requisitos

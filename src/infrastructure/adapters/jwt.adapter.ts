@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
-import { ITokenRepository } from '../../../domain/repositories/token.repository';
-import { Token } from '../../../domain/entities/token.entity';
+import { ITokenRepository } from '../../domain/repositories/token.repository';
+import { Token } from '../../domain/entities/token.entity';
 
 /**
  * ADAPTADOR JWT - Capa de Infraestructura
@@ -38,23 +38,6 @@ export class JwtAdapter implements ITokenRepository {
     }
   }
 
-  /**
-   * Método alternativo para decodificar tokens (mismo comportamiento)
-   */
-  async decodeToken(tokenValue: string): Promise<Token | null> {
-    try {
-      const cleanToken = this.extractBearerToken(tokenValue);
-      const decoded = jwt.decode(cleanToken) as any;
-      
-      if (!decoded || !decoded.exp) {
-        return null;
-      }
-
-      return new Token(decoded);
-    } catch (error) {
-      return null;
-    }
-  }
 
   /**
    * Extrae el token limpio removiendo el prefijo 'Bearer ' si existe

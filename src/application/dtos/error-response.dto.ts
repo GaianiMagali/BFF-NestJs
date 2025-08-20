@@ -1,33 +1,18 @@
-import { ApiProperty } from '@nestjs/swagger';
+// DTO para respuestas de error - versión sin Swagger
 
 export class ErrorResponseDto {
-  @ApiProperty({ 
-    description: 'Indica que ocurrió un error',
-    example: true 
-  })
+  // Indica que ocurrió un error
   error!: boolean;
 
-  @ApiProperty({ 
-    description: 'Código de estado HTTP',
-    example: 401 
-  })
+  // Código de estado HTTP (401, 404, 500, etc.)
   statusCode!: number;
 
-  @ApiProperty({ 
-    description: 'Código específico del error',
-    example: 'TOKEN_EXPIRED' 
-  })
+  // Código específico del error para el frontend
   errorCode!: string;
 
-  @ApiProperty({ 
-    description: 'Mensaje descriptivo del error',
-    example: 'Token has expired' 
-  })
+  // Mensaje descriptivo del error
   message!: string;
 
-  @ApiProperty({ 
-    description: 'Timestamp cuando ocurrió el error',
-    example: '2024-01-15T10:00:00.000Z' 
-  })
+  // Timestamp cuando ocurrió el error
   timestamp!: string;
 }

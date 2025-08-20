@@ -3,9 +3,10 @@ import { APP_FILTER } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { AuthController } from './presentation/controllers/auth.controller';
 import { ValidateTokenUseCase } from './application/use-cases/validate-token.use-case';
-import { JwtAdapter } from './infrastructure/adapters/jwt/jwt.adapter';
-import { UserApiAdapter } from './infrastructure/adapters/external-api/user-api.adapter';
-import { TokenValidationAdapter } from './infrastructure/adapters/external-api/token-validation.adapter';
+import { GetDataUseCase } from './application/use-cases/get-data.use-case';
+import { JwtAdapter } from './infrastructure/adapters/jwt.adapter';
+import { DataApiAdapter } from './infrastructure/adapters/data-api.adapter';
+import { TokenValidationAdapter } from './infrastructure/adapters/token-validation.adapter';
 import { TokenValidationGuard } from './infrastructure/guards/token-validation.guard';
 import { DomainExceptionFilter } from './infrastructure/filters/domain-exception.filter';
 
@@ -25,6 +26,7 @@ import { DomainExceptionFilter } from './infrastructure/filters/domain-exception
   providers: [
     // Casos de uso - Capa de Aplicación
     ValidateTokenUseCase,
+    GetDataUseCase,
     
     // Implementación de repositorios - Capa de Infraestructura
     {
@@ -33,7 +35,7 @@ import { DomainExceptionFilter } from './infrastructure/filters/domain-exception
     },
     
     // Adaptadores para APIs externas
-    UserApiAdapter,
+    DataApiAdapter,
     TokenValidationAdapter,
     
     // Guards para proteger endpoints
