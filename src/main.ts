@@ -1,39 +1,47 @@
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as dotenv from 'dotenv';
+import { 
+  GlobalExceptionFilter,
+  DomainExceptionMapper,
+  HttpExceptionMapper,
+  DefaultExceptionMapper
+} from './shared';
+import { AuthExceptionMapper } from './modules/auth/infrastructure/exception-mappers/auth-exception.mapper';
 
-// Cargar variables de entorno
 dotenv.config();
 
-/**
- * PUNTO DE ENTRADA DE LA APLICACIÓN BFF - VERSIÓN SIN SWAGGER
- * 
- * Este archivo es donde comienza la ejecución de toda la aplicación.
- * Configuración mínima sin documentación automática para entornos de producción.
- */
 (async function bootstrap() {
-  // Crear la aplicación NestJS con el módulo principal
+  
   const app = await NestFactory.create(AppModule);
   
-  // Configurar pipes globales para validación automática de DTOs
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,      // Solo permite propiedades definidas en los DTOs
-      forbidNonWhitelisted: true, // Rechaza propiedades no permitidas
-      transform: true,      // Transforma automáticamente los tipos de datos
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
     }),
   );
 
-  // Configurar prefijo global '/api' para todas las rutas
-  app.setGlobalPrefix('api');
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(
+      new AuthExceptionMapper(),
+      new DomainExceptionMapper(),
+      new HttpExceptionMapper(),
+      new DefaultExceptionMapper()
+    )
+  );
 
-  // Habilitar CORS para permitir requests desde el frontend
+  app.setGlobalPrefix('api');
   app.enableCors();
   
-  // Levantar el servidor en el puerto configurado
   const port = process.env.PORT || 3001;
+  
   await app.listen(port);
-  console.log(`🚀 BFF is running on port ${port}`);
-  console.log(`📡 API available at: http://localhost:${port}/api`);
+  
+  const logger = new (await import('@nestjs/common')).Logger('Bootstrap');
+  logger.log(`🚀 BFF corriendo en puerto ${port}!`);
+  logger.log(`📡 API disponible en: http://localhost:${port}/api`);
 })();

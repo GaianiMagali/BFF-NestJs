@@ -1,610 +1,543 @@
-# 🚀 BFF NestJS - Arquitectura Hexagonal
+# 🚀 BFF NestJS - Arquitectura DDD desde Cero
 
-Backend For Frontend (BFF) desarrollado con NestJS siguiendo patrones de **Arquitectura Hexagonal** para validación de tokens JWT y obtención de información de usuario.
+**Backend For Frontend (BFF)** armado con **NestJS** usando **Arquitectura Domain-Driven Design** para validar tokens JWT y manejar datos externos.
 
-## 📋 Tabla de Contenidos
+## 📋 Contenido
 
-- [Características](#características)
-- [Arquitectura](#arquitectura)
-- [Requisitos](#requisitos)
-- [Instalación](#instalación)
-- [Configuración](#configuración)
-- [Ejecución](#ejecución)
-- [API Endpoints](#api-endpoints)
-- [Testing](#testing)
-- [Estructura del Proyecto](#estructura-del-proyecto)
-- [Tecnologías](#tecnologías)
+- [¿Qué carajo es esto?](#qué-carajo-es-esto)
+- [Instalación desde cero](#instalación-desde-cero)
+- [Cómo crear este proyecto paso a paso](#cómo-crear-este-proyecto-paso-a-paso)
+- [Arquitectura explicada](#arquitectura-explicada)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Cómo usar este proyecto](#cómo-usar-este-proyecto)
+- [Gráficos de la arquitectura](#gráficos-de-la-arquitectura)
 
-## ✨ Características
+## 🤔 ¿Qué carajo es esto?
 
-- 🏗️ **Arquitectura Hexagonal** - Separación limpia de responsabilidades
-- 🔐 **Validación JWT** - Decodificación sin verificación de firma
-- 🔄 **Token Renovation** - Obtención de tokens renovados de API externa
-- 🌐 **Integración APIs** - Comunicación con servicios externos
-- 📚 **Swagger Documentation** - API completamente documentada
-- 🛡️ **Guards & Filters** - Manejo robusto de errores y seguridad
-- 🔧 **Variables de Entorno** - Configuración flexible por ambiente
-- 🔄 **Hot Reload** - Desarrollo con recarga automática
+Mirá, esto es un **servidor** (backend) que actúa como intermediario entre tu aplicación frontend y otros servicios. Es como el portero de un edificio:
 
-## 🏗️ Arquitectura
+- 🛡️ **Valida credenciales** (tokens JWT) - "¿Tenés pase para entrar?"
+- 🔄 **Se conecta con otras APIs** - "Voy a buscar tus datos"  
+- 📡 **Responde al frontend** - "Acá tenés lo que pediste"
+- ❌ **Maneja errores** - "No podés pasar porque tu pase está vencido"
 
-### Arquitectura Hexagonal (Ports & Adapters)
+### ¿Para qué sirve?
+Si tenés una app React, Vue, o lo que sea, este servidor:
+1. Recibe requests de tu app
+2. Revisa si el usuario puede hacer lo que pide
+3. Va a buscar datos a otros servicios si hace falta
+4. Te devuelve todo listo para mostrar
 
-```
-┌─────────────────────┐
-│    Presentation     │  ← Controllers, DTOs
-├─────────────────────┤
-│    Application      │  ← Use Cases, DTOs
-├─────────────────────┤
-│      Domain         │  ← Entities, Repositories
-├─────────────────────┤
-│   Infrastructure    │  ← Adapters, Guards, Filters
-└─────────────────────┘
-```
+## 🔧 Instalación desde cero
 
-## 🔄 Flujo Detallado de Datos
+### Pre-requisitos (lo básico que necesitás)
 
-### Arquitectura de Capas
+#### 1. Node.js (el motor de JavaScript)
+```bash
+# Verificar si ya lo tenés
+node --version
+npm --version
 
-```mermaid
-graph TB
-    subgraph "🌐 Cliente"
-        Client[Frontend/Postman]
-    end
-    
-    subgraph "🎨 PRESENTATION Layer"
-        Controller[AuthController]
-        Guard[TokenValidationGuard]
-    end
-    
-    subgraph "📋 APPLICATION Layer"  
-        UseCase[ValidateTokenUseCase]
-        DTOs[DTOs Response]
-    end
-    
-    subgraph "📊 DOMAIN Layer"
-        Entity[Token Entity]
-        Exceptions[Domain Exceptions]
-    end
-    
-    subgraph "🔧 INFRASTRUCTURE Layer"
-        JWTAdapter[JWT Adapter]
-        ValidationAdapter[Token Validation Adapter]
-        UserAdapter[User API Adapter]
-        Filter[Exception Filter]
-    end
-    
-    subgraph "🌍 External Services"
-        ValidationAPI[Token Validation API]
-        UserAPI[User Info API]
-    end
-
-    Client --> Controller
-    Controller --> Guard
-    Guard --> UseCase
-    UseCase --> Entity
-    UseCase --> JWTAdapter
-    UseCase --> ValidationAdapter
-    UseCase --> UserAdapter
-    ValidationAdapter --> ValidationAPI
-    UserAdapter --> UserAPI
-    Exceptions --> Filter
-    DTOs --> Controller
+# Si no tenés Node.js, bajalo de: https://nodejs.org/
+# Necesitás la versión 18 o superior
 ```
 
-### Flujo Paso a Paso con Componentes
+#### 2. Editor de código (recomendado)
+- **VS Code** (gratis): https://code.visualstudio.com/
+- Extensiones útiles: "TypeScript", "NestJS Files"
 
-```mermaid
-sequenceDiagram
-    participant C as 🌐 Cliente
-    participant G as 🛡️ Guard
-    participant UC as 📋 UseCase
-    participant JWT as 🔐 JWT Adapter
-    participant VA as ✅ Validation Adapter
-    participant UA as 👤 User Adapter
-    participant E as 📊 Token Entity
-    participant Ctrl as 🎯 Controller
-    participant F as 🚨 Exception Filter
-    participant ExtAPI1 as 🌍 Validation API
-    participant ExtAPI2 as 🌍 User API
+#### 3. Postman (para probar APIs)
+- Descargar: https://www.postman.com/
 
-    Note over C: 1. Request con Token
-    C->>G: GET /api<br/>Authorization: Bearer <token>
-    
-    Note over G: 2. Extracción y Validación
-    G->>UC: validateToken(token)
-    
-    Note over UC: 3. Decodificación JWT
-    UC->>JWT: validateToken(token)
-    JWT->>E: new Token(payload)
-    E->>UC: Token entity
-    
-    alt Token expirado
-        UC->>F: throw TokenExpiredException
-        F->>C: 401 + error details
-    else Token válido
-        Note over UC: 4. Validación Externa
-        UC->>VA: validateAndRenewToken(token)
-        VA->>ExtAPI1: POST /validate
-        ExtAPI1->>VA: renewed_token
-        VA->>UC: renewed_token
-        
-        Note over UC: 5. Obtener Info Usuario
-        UC->>UA: getUserInfo(renewed_token)
-        UA->>ExtAPI2: GET /users/1
-        ExtAPI2->>UA: user_data
-        UA->>UC: user_data
-        
-        Note over UC: 6. Respuesta Exitosa
-        UC->>G: { isValid: true, token, userInfo }
-        G->>Ctrl: request.user = token<br/>request.userInfo = userInfo
-        Ctrl->>C: 200 + ValidateTokenResponseDto
-    end
+#### 4. Git (para versionar código)
+```bash
+# Verificar si tenés git
+git --version
+
+# Si no lo tenés: https://git-scm.com/
 ```
 
-### Flujo de Datos por Capa
-
-```mermaid
-flowchart LR
-    subgraph Input["📥 INPUT"]
-        A[Authorization: Bearer eyJ...]
-    end
-    
-    subgraph Presentation["🎨 PRESENTATION"]
-        B[Guard extrae token]
-        C[Controller formatea respuesta]
-    end
-    
-    subgraph Application["📋 APPLICATION"]
-        D[UseCase orquesta validación]
-        E[DTOs estructuran datos]
-    end
-    
-    subgraph Domain["📊 DOMAIN"]
-        F[Token Entity valida payload]
-        G[Exceptions manejan errores]
-    end
-    
-    subgraph Infrastructure["🔧 INFRASTRUCTURE"]
-        H[JWT Adapter decodifica]
-        I[HTTP Adapters llaman APIs]
-        J[Exception Filter formatea errores]
-    end
-    
-    subgraph External["🌍 EXTERNAL"]
-        K[Validation API renueva token]
-        L[User API retorna datos]
-    end
-    
-    subgraph Output["📤 OUTPUT"]
-        M[JSON Response estructurado]
-    end
-
-    A --> B
-    B --> D
-    D --> F
-    D --> H
-    D --> I
-    H --> D
-    I --> K
-    I --> L
-    K --> I
-    L --> I
-    I --> D
-    F --> D
-    D --> B
-    B --> C
-    C --> E
-    E --> M
-    
-    G --> J
-    J --> M
-```
-
-## 📊 Datos que Viajan entre Componentes
-
-### 🔄 Transformación de Datos
-
-| Componente | Input | Output | Propósito |
-|------------|-------|--------|-----------|
-| **Client** | `Authorization: Bearer eyJhbGci...` | - | Envía token en header |
-| **Guard** | `"Bearer eyJhbGci..."` | `{ isValid: true, token: Token, userInfo: {...} }` | Extrae y valida token |
-| **JWT Adapter** | `"eyJhbGci..."` | `Token { sub: "123", exp: 1703980800 }` | Decodifica sin verificar firma |
-| **Token Entity** | `{ sub: "123", username: "john", exp: 1703980800 }` | `Token entity methods` | Encapsula lógica del token |
-| **Validation Adapter** | `"eyJhbGci..."` | `"renewed_eyJhbGci..."` | Renueva token vía API externa |
-| **User Adapter** | `"renewed_eyJhbGci..."` | `{ id: 1, name: "John", email: "..." }` | Obtiene info del usuario |
-| **UseCase** | `"eyJhbGci..."` | `{ isValid: true, token, userInfo, message }` | Orquesta todo el proceso |
-| **Controller** | `request.user, request.userInfo` | `ValidateTokenResponseDto` | Formatea respuesta final |
-
-### 📤 Respuesta Final
-
-```json
-{
-  "valid": true,
-  "message": "Token validated, renewed, and user info retrieved",
-  "tokenInfo": {
-    "sub": "12345",
-    "username": "john_doe", 
-    "exp": 1703980800,
-    "iat": 1703977200,
-    "payload": { "sub": "12345", "username": "john_doe", "exp": 1703980800 }
-  },
-  "externalUserInfo": {
-    "id": 1,
-    "name": "Leanne Graham",
-    "username": "Bret", 
-    "email": "Sincere@april.biz",
-    "phone": "1-770-736-8031 x56442",
-    "website": "hildegard.org",
-    "company": { "name": "Romaguera-Crona" },
-    "address": { "street": "Kulas Light", "city": "Gwenborough" }
-  }
-}
-```
-
-### 🚨 Respuesta de Error
-
-```json
-{
-  "error": true,
-  "statusCode": 401,
-  "errorCode": "TOKEN_EXPIRED",
-  "message": "Token has expired",
-  "timestamp": "2024-01-15T10:30:00.000Z"
-}
-```
-
-### 🔍 Adaptadores en Detalle
-
-#### JWT Adapter
-```typescript
-// Input:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-// Output: Token { payload: { sub: "123", exp: 1703980800 } }
-```
-
-#### Token Validation Adapter  
-```typescript
-// Input:  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-// HTTP:   POST https://httpbin.org/post
-// Output: "renewed_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-```
-
-#### User API Adapter
-```typescript
-// Input:  "renewed_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-// HTTP:   GET https://jsonplaceholder.typicode.com/users/1
-// Output: { id: 1, name: "Leanne Graham", email: "..." }
-```
-
-## 🛠️ Requisitos
-
-- **Node.js** >= 18.x
-- **npm** >= 8.x
-- **TypeScript** >= 5.x
-
-## 📦 Instalación
-
-### 1. Clonar el Repositorio
+### Instalación global de herramientas
 
 ```bash
-git clone <repository-url>
-cd bff-nestJS-arquitectura-hexagonal
+# Instalar NestJS CLI globalmente (para crear proyectos)
+npm install -g @nestjs/cli
+
+# Instalar TypeScript globalmente (recomendado)
+npm install -g typescript
+
+# Verificar que se instaló todo
+nest --version
+tsc --version
 ```
 
-### 2. Instalar Dependencias
+## 🚀 Cómo crear este proyecto paso a paso
+
+### Paso 1: Crear proyecto NestJS desde cero
 
 ```bash
-npm install
+# Crear nuevo proyecto
+nest new mi-bff-proyecto
+
+# Elegir npm como package manager
+# Entrar al proyecto
+cd mi-bff-proyecto
+
+# Probarlo
+npm run start:dev
 ```
 
-#### Dependencias Principales
+Deberías ver algo como:
+```
+[Nest] Starting Nest application...
+[Nest] Nest application successfully started +2ms
+```
 
-| Paquete | Propósito |
-|---------|-----------|
-| `@nestjs/core` | Framework base de NestJS |
-| `@nestjs/common` | Decoradores y utilidades |
-| `@nestjs/platform-express` | Adaptador para Express |
-| `@nestjs/axios` | Cliente HTTP para APIs externas |
-| `@nestjs/swagger` | Documentación automática de API |
-| `jsonwebtoken` | Manejo y decodificación de JWT |
-| `axios` | Cliente HTTP |
-| `class-validator` | Validación de DTOs |
-| `class-transformer` | Transformación de objetos |
-| `dotenv` | Manejo de variables de entorno |
-| `reflect-metadata` | Soporte para decoradores |
-| `rxjs` | Programación reactiva |
+### Paso 2: Instalar dependencias adicionales
 
-#### Dependencias de Desarrollo
+```bash
+# Para hacer requests HTTP a otras APIs
+npm install @nestjs/axios axios
 
-| Paquete | Propósito |
-|---------|-----------|
-| `typescript` | Compilador TypeScript |
-| `ts-node` | Ejecución directa de TypeScript |
-| `ts-node-dev` | Desarrollo con hot reload |
-| `@types/*` | Definiciones de tipos |
-| `tsconfig-paths` | Resolución de paths |
+# Para manejar JWT (tokens de autenticación)  
+npm install jsonwebtoken
+npm install -D @types/jsonwebtoken
 
-## ⚙️ Configuración
+# Para validación de datos
+npm install class-validator class-transformer
 
-### 1. Variables de Entorno
+# Para variables de entorno
+npm install dotenv
 
-Crear archivo `.env` en la raíz del proyecto:
+# Para generar respuestas HTTP consistentes
+npm install @nestjs/common @nestjs/core
+```
 
+### Paso 3: Configurar estructura DDD
+
+```bash
+# Crear carpetas siguiendo Domain-Driven Design
+mkdir -p src/shared/domain/exceptions
+mkdir -p src/shared/application/exceptions  
+mkdir -p src/shared/infrastructure/exceptions
+mkdir -p src/shared/infrastructure/filters
+
+mkdir -p src/modules/auth/domain/entities
+mkdir -p src/modules/auth/domain/value-objects
+mkdir -p src/modules/auth/domain/repositories
+mkdir -p src/modules/auth/domain/services
+mkdir -p src/modules/auth/domain/exceptions
+
+mkdir -p src/modules/auth/application/use-cases
+
+mkdir -p src/modules/auth/infrastructure/controllers
+mkdir -p src/modules/auth/infrastructure/adapters
+mkdir -p src/modules/auth/infrastructure/guards
+mkdir -p src/modules/auth/infrastructure/exceptions
+```
+
+### Paso 4: Configurar archivo de entorno
+
+```bash
+# Crear archivo .env
+touch .env
+```
+
+Agregar en `.env`:
 ```env
-# Configuración del BFF
-PORT=3000
+# Puerto donde va a correr el servidor
+PORT=3001
 
-# API Externa - JSONPlaceholder (para desarrollo/testing)
-EXTERNAL_API_BASE_URL=https://jsonplaceholder.typicode.com
+# URL de API externa para obtener datos (ejemplo con PokeAPI)
+EXTERNAL_API_BASE_URL=https://pokeapi.co/api/v2
 
-# API de validación de tokens (para obtener token renovado)
+# URL para validar tokens (ejemplo con httpbin para testing)
 TOKEN_VALIDATION_API_URL=https://httpbin.org/post
 ```
 
-### 2. Configuración TypeScript
+### Paso 5: Configurar TypeScript
 
-El proyecto usa `tsconfig.json` con:
-- **Target**: ES2020
-- **Module**: CommonJS
-- **Decorators**: Habilitados
-- **Strict Mode**: Activado
-- **Path Mapping**: Para imports limpios
-
-### 3. Configuración NestJS
-
-- **Puerto**: Configurable via `PORT` env var (default: 3000)
-- **CORS**: Habilitado para requests del frontend
-- **Global Prefix**: `/api` para todos los endpoints
-- **Swagger**: Disponible en `/api/docs`
-
-## 🚀 Ejecución
-
-### Desarrollo (Recomendado)
-
-```bash
-npm run start:dev
-```
-- ✅ Hot reload automático
-- ✅ Transpilación rápida
-- ✅ Soporte para debugging
-
-### Producción
-
-```bash
-# Compilar
-npm run build
-
-# Ejecutar compilado
-npm run start:prod
-```
-
-### Una Vez (Sin Hot Reload)
-
-```bash
-npm start
-```
-
-### Verificar que está funcionando
-
-```bash
-curl http://localhost:3000/api
-# Debería retornar error 401 (esperado sin token)
-```
-
-## 🌐 API Endpoints
-
-### GET /api
-
-**Descripción**: Valida token JWT y retorna información del usuario
-
-**Headers**:
-```
-Authorization: Bearer <jwt-token>
-```
-
-**Respuesta Exitosa (200)**:
+Editar `tsconfig.json`:
 ```json
 {
-  "valid": true,
-  "message": "Token validated, renewed, and user info retrieved",
-  "tokenInfo": {
-    "sub": "12345",
-    "username": "john_doe",
-    "exp": 1703980800,
-    "iat": 1703980800,
-    "payload": { ... }
-  },
-  "externalUserInfo": {
-    "id": 1,
-    "name": "Leanne Graham",
-    "username": "Bret",
-    "email": "Sincere@april.biz",
-    ...
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2020",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": false,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "forceConsistentCasingInFileNames": false,
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@modules/*": ["src/modules/*"]
+    }
   }
 }
 ```
 
-**Respuestas de Error (401)**:
+### Paso 6: Scripts útiles en package.json
 
-| Error Code | Descripción |
-|------------|-------------|
-| `TOKEN_NOT_PROVIDED` | Sin header Authorization |
-| `INVALID_TOKEN` | JWT malformado |
-| `TOKEN_EXPIRED` | Token vencido |
-
-### GET /api/docs
-
-**Descripción**: Documentación interactiva Swagger UI
-
-## 🧪 Testing
-
-### Swagger UI (Recomendado)
-
-1. Abrir http://localhost:3000/api/docs
-2. Hacer clic en "Authorize" 🔒
-3. Ingresar: `Bearer <tu-jwt-token>`
-4. Probar el endpoint
-
-### Postman
-
-```
-GET http://localhost:3000/api
-Headers:
-  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Agregar en `package.json`:
+```json
+{
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/main",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
+  }
+}
 ```
 
-### cURL
+## 🏛️ Arquitectura explicada
+
+### ¿Qué es Domain-Driven Design (DDD)?
+
+Imaginate que estás construyendo una empresa. DDD es como organizar los departamentos:
+
+#### 📊 **Domain (Dominio)** - "Las reglas del negocio"
+- Como el CEO que define las reglas principales
+- Ejemplo: "Un token vencido no puede usarse"
+- **No depende de nada externo** (bases de datos, APIs, etc.)
+
+#### 📋 **Application (Aplicación)** - "Casos de uso" 
+- Como los gerentes que ejecutan los procesos
+- Ejemplo: "Proceso para validar un usuario"
+- **Orquesta** las reglas del dominio
+
+#### 🔧 **Infrastructure (Infraestructura)** - "Conexiones externas"
+- Como el departamento de IT que maneja las conexiones
+- Ejemplo: "Llamar a la API de validación"
+- **Se conecta** con bases de datos, APIs, archivos, etc.
+
+### Arquitectura Hexagonal (Puertos y Adaptadores)
+
+```
+                🏢 APLICACIÓN
+     ┌─────────────────────────────────┐
+     │         📊 DOMAIN               │
+     │    (Reglas de negocio)          │
+     │                                 │
+     │  ┌─────────────────────────┐    │
+     │  │   📋 APPLICATION        │    │
+     │  │   (Casos de uso)        │    │
+     │  └─────────────────────────┘    │
+     │                                 │
+     └─────────────────────────────────┘
+              │                │
+    ┌─────────┴─────────┐     ┌┴──────────┐
+    │  🔌 PUERTO HTTP   │     │ 🔌 PUERTO │
+    │  (Controller)     │     │   API     │
+    └─────────┬─────────┘     └┬──────────┘
+              │                │
+    ┌─────────┴─────────┐     ┌┴──────────┐
+    │  🔧 ADAPTADOR     │     │ 🔧 ADAPT.  │
+    │   (Express)       │     │ (Axios)   │
+    └───────────────────┘     └───────────┘
+```
+
+## 📁 Estructura del proyecto
+
+```
+📦 mi-bff-proyecto/
+├── 📁 src/
+│   ├── 📄 main.ts                          # 🚀 Arranca todo (bootstrap)
+│   ├── 📄 app.module.ts                    # 🏢 Módulo principal
+│   │
+│   ├── 📁 shared/                          # 🌍 Código compartido
+│   │   ├── 📄 index.ts                     # 📦 Exports de todo
+│   │   ├── 📁 domain/exceptions/           # ❌ Errores básicos
+│   │   ├── 📁 application/exceptions/      # ❌ Errores de casos de uso  
+│   │   └── 📁 infrastructure/
+│   │       ├── 📁 exceptions/              # ❌ Errores técnicos
+│   │       └── 📁 filters/                 # 🛡️ Maneja errores auto
+│   │
+│   └── 📁 modules/auth/                    # 🔐 Módulo de autenticación
+│       ├── 📄 auth.module.ts               # ⚙️ Config del módulo
+│       ├── 📄 index.ts                     # 📦 Exports del módulo
+│       │
+│       ├── 📁 domain/                      # 🏛️ NÚCLEO DEL NEGOCIO
+│       │   ├── 📁 entities/                # 📊 Objetos principales
+│       │   ├── 📁 value-objects/           # 💎 Objetos de valor
+│       │   ├── 📁 repositories/            # 🗂️ Contratos para datos
+│       │   ├── 📁 services/                # 🔧 Lógica de dominio
+│       │   └── 📁 exceptions/              # ❌ Errores específicos
+│       │
+│       ├── 📁 application/                 # 📋 CASOS DE USO
+│       │   └── 📁 use-cases/               # 🎯 Acciones que hace la app
+│       │
+│       └── 📁 infrastructure/              # 🔧 MUNDO EXTERIOR
+│           ├── 📁 controllers/             # 📡 Maneja HTTP
+│           ├── 📁 adapters/                # 🔌 Conecta con APIs
+│           ├── 📁 guards/                  # 🛡️ Seguridad
+│           └── 📁 exceptions/              # ❌ Errores técnicos
+│
+├── 📄 .env                                 # 🔧 Variables de entorno
+├── 📄 package.json                         # 📋 Dependencias y scripts
+├── 📄 tsconfig.json                        # ⚙️ Config de TypeScript
+├── 📄 nest-cli.json                        # ⚙️ Config de NestJS
+└── 📄 README.md                            # 📖 Este archivo
+```
+
+## 🚀 Cómo usar este proyecto
+
+### 1. Clonar y configurar
+```bash
+# Clonar el repo
+git clone <url-del-repo>
+cd bff-nestjs-arquitectura-hexagonal
+
+# Instalar dependencias
+npm install
+
+# Configurar variables (opcional, ya están configuradas)
+cp .env.example .env
+```
+
+### 2. Ejecutar en desarrollo
+```bash
+# Modo desarrollo (se reinicia automáticamente)
+npm run start:dev
+
+# Deberías ver:
+# 🚀 BFF is running on port 3002
+# 📡 API available at: http://localhost:3002/api
+```
+
+### 3. Probar que funciona
+```bash
+# Sin token (debería dar error)
+curl http://localhost:3002/api
+
+# Respuesta esperada:
+{
+  "error": true,
+  "statusCode": 401,
+  "errorCode": "TOKEN_NOT_PROVIDED",
+  "message": "Authorization token not provided",
+  "layer": "Domain",
+  "timestamp": "2025-08-20T08:12:06.857Z"
+}
+```
 
 ```bash
-curl -X GET "http://localhost:3000/api" \
-  -H "Authorization: Bearer <tu-token>"
+# Con token inválido
+curl -H "Authorization: Bearer token-trucho" http://localhost:3002/api
+
+# Respuesta esperada:
+{
+  "error": true,
+  "statusCode": 401,
+  "errorCode": "INVALID_TOKEN",
+  "message": "Invalid token format or structure", 
+  "layer": "Domain",
+  "timestamp": "2025-08-20T08:12:06.857Z"
+}
 ```
 
-### Token de Prueba
-
-Para testing, generar JWT en https://jwt.io con payload:
+### 4. Generar token válido para probar
+1. Andá a [jwt.io](https://jwt.io)
+2. En "Payload" poné:
 ```json
 {
   "sub": "1",
-  "username": "testuser",
+  "username": "messi",
   "iat": 1703980800,
   "exp": 2903980800
 }
 ```
-
-## 📁 Estructura del Proyecto
-
-```
-src/
-├── main.ts                           # 🚀 Punto de entrada
-├── app.module.ts                     # 📦 Módulo principal
-├── presentation/                     # 🎨 Capa de Presentación
-│   └── controllers/
-│       └── auth.controller.ts        # 🎯 Endpoints HTTP
-├── application/                      # 📋 Capa de Aplicación
-│   ├── dtos/                        # 📄 Data Transfer Objects
-│   │   ├── index.ts                 # 📦 Barrel exports
-│   │   ├── token-info.dto.ts        # 🎫 Info del JWT
-│   │   ├── external-user-info.dto.ts # 👤 Info del usuario
-│   │   ├── validate-token-response.dto.ts # ✅ Respuesta exitosa
-│   │   └── error-response.dto.ts    # ❌ Respuesta de error
-│   └── use-cases/
-│       └── validate-token.use-case.ts # 🔄 Lógica de negocio
-├── domain/                          # 🏛️ Capa de Dominio
-│   ├── entities/
-│   │   └── token.entity.ts          # 🎫 Entidad Token
-│   ├── exceptions/
-│   │   └── token.exception.ts       # ⚠️ Excepciones específicas
-│   └── repositories/
-│       └── token.repository.ts      # 🗂️ Interface del repositorio
-└── infrastructure/                  # 🔧 Capa de Infraestructura
-    ├── adapters/
-    │   ├── jwt/
-    │   │   └── jwt.adapter.ts       # 🔐 Decodificación JWT
-    │   └── external-api/
-    │       ├── token-validation.adapter.ts # ✅ Validación externa
-    │       └── user-api.adapter.ts  # 👤 API de usuarios
-    ├── guards/
-    │   └── token-validation.guard.ts # 🛡️ Protección de endpoints
-    └── filters/
-        └── domain-exception.filter.ts # 🚨 Manejo de errores
+3. Copiá el token que genera
+4. Probalo:
+```bash
+curl -H "Authorization: Bearer TU_TOKEN_AQUI" http://localhost:3002/api
 ```
 
-## 💻 Tecnologías
+### 5. Usar con Postman
+1. Abrí Postman
+2. Hacé un GET a `http://localhost:3002/api`
+3. En Headers agregá:
+   - Key: `Authorization`
+   - Value: `Bearer TU_TOKEN_AQUI`
 
-### Backend Framework
-- **NestJS** - Framework Node.js enterprise-ready
-- **Express** - Servidor HTTP subyacente
-- **TypeScript** - JavaScript con tipos estáticos
+## 📊 Gráficos de la arquitectura
 
-### Validación & Transformación
-- **Class Validator** - Validación basada en decoradores
-- **Class Transformer** - Transformación de objetos
+### Flujo completo de una request
 
-### HTTP & APIs
-- **Axios** - Cliente HTTP para APIs externas
-- **RxJS** - Programación reactiva
+```mermaid
+graph TB
+    A[👤 Frontend envía request] --> B[🛡️ Guard intercepta]
+    B --> C{Token válido?}
+    C -->|❌ NO| D[🚨 Error 401]
+    C -->|✅ SÍ| E[🎯 Controller recibe]
+    E --> F[📋 Use Case ejecuta]
+    F --> G[🔌 Adapter llama API externa]
+    G --> H[📊 Entity procesa datos]
+    H --> I[📡 Response al frontend]
+    
+    D --> J[🛡️ Exception Filter]
+    J --> K[📱 JSON Error Response]
+```
 
-### JWT & Seguridad
-- **jsonwebtoken** - Manejo de JWT
-- **Guards** - Protección de rutas
-- **Exception Filters** - Manejo centralizado de errores
+### Arquitectura de capas
 
-### Documentación
-- **Swagger/OpenAPI** - Documentación interactiva de API
-- **TypeDoc** - Documentación del código
+```mermaid
+graph LR
+    subgraph "🌐 Cliente"
+        FE[Frontend<br/>React/Vue/Angular]
+    end
+    
+    subgraph "🎨 PRESENTATION"
+        CTRL[Controller<br/>📡 HTTP Endpoints]
+        GUARD[Guard<br/>🛡️ Seguridad]
+    end
+    
+    subgraph "📋 APPLICATION" 
+        UC[Use Cases<br/>🎯 Lógica de app]
+    end
+    
+    subgraph "📊 DOMAIN"
+        ENT[Entities<br/>📊 Objetos de negocio]
+        VO[Value Objects<br/>💎 Objetos inmutables] 
+        DS[Domain Services<br/>🔧 Reglas de negocio]
+        EX[Exceptions<br/>❌ Errores de dominio]
+    end
+    
+    subgraph "🔧 INFRASTRUCTURE"
+        ADAPT[Adapters<br/>🔌 APIs externas]
+        REPO[Repositories<br/>🗂️ Acceso a datos]
+        FILT[Filters<br/>🛡️ Manejo de errores]
+    end
+    
+    subgraph "🌍 Externo"
+        API1[API de validación]
+        API2[API de datos]
+    end
+    
+    FE --> GUARD
+    GUARD --> CTRL
+    CTRL --> UC
+    UC --> DS
+    UC --> ENT
+    UC --> ADAPT
+    ADAPT --> API1
+    ADAPT --> API2
+    EX --> FILT
+```
 
-### Desarrollo
-- **ts-node-dev** - Hot reload en desarrollo
-- **dotenv** - Variables de entorno
-- **ESLint** - Linting de código
-- **Prettier** - Formateo de código
+### Flujo de datos específico
 
-## 🔧 Scripts Disponibles
+```mermaid
+sequenceDiagram
+    participant FE as 👤 Frontend
+    participant G as 🛡️ Guard
+    participant C as 🎯 Controller
+    participant UC as 📋 Use Case
+    participant DS as 🔧 Domain Service
+    participant A as 🔌 Adapter
+    participant API as 🌍 API Externa
+    participant F as 🛡️ Filter
+
+    FE->>G: GET /api + Authorization header
+    G->>UC: validateToken(token)
+    UC->>DS: validateTokenBusinessRules(token)
+    DS->>UC: ✅ Token valid
+    UC->>A: validateAndRenewToken(token)
+    A->>API: POST /validate
+    API->>A: renewed_token
+    A->>UC: renewed_token
+    UC->>G: ✅ Success
+    G->>C: request with validated data
+    C->>FE: 📊 JSON Response
+    
+    Note over UC,F: Si hay error
+    UC->>F: throw TokenExpiredException
+    F->>FE: 📱 JSON Error Response
+```
+
+## 🔧 Scripts útiles
 
 ```bash
-# Desarrollo con hot reload
+# Desarrollo con auto-reload
 npm run start:dev
 
-# Producción (compilar + ejecutar)
-npm run build && npm run start:prod
-
-# Ejecutar una vez
-npm start
-
-# Compilar TypeScript
+# Compilar para producción
 npm run build
 
-# Linting
-npm run lint
+# Ejecutar versión compilada
+npm run start:prod
 
-# Tests (por configurar)
-npm test
+# Limpiar errores de código
+npm run lint
 ```
 
-## 🌍 Ambientes
+## 🤝 Cómo extender este proyecto
 
-### Desarrollo
-- Puerto: 3000
-- Hot reload: ✅
-- Logging: Detallado
-- CORS: Habilitado
+### Agregar nuevo módulo (ej: usuarios)
+```bash
+# Crear estructura
+mkdir -p src/modules/users/domain/entities
+mkdir -p src/modules/users/application/use-cases
+mkdir -p src/modules/users/infrastructure/controllers
 
-### Producción
-- Puerto: Variable `PORT`
-- Compilación: Optimizada
-- Logging: Estructurado
-- Variables: Desde archivo `.env`
+# Crear módulo
+nest g module modules/users --no-spec
+nest g controller modules/users/infrastructure/controllers/users --no-spec
+nest g service modules/users/application/use-cases/get-users --no-spec
+```
 
-## 📝 Notas Importantes
+### Cambiar API externa
+1. Modificá `EXTERNAL_API_BASE_URL` en `.env`
+2. Actualizá el adapter en `infrastructure/adapters/`
+3. Ajustá las entities si cambia la estructura de datos
 
-1. **JWT Sin Validación de Firma**: El BFF solo decodifica el JWT y verifica expiración. La validación de firma se delega a la API externa.
+### Agregar nueva funcionalidad
+1. **Domain**: Definí entities y reglas de negocio
+2. **Application**: Creá use cases
+3. **Infrastructure**: Implementá adapters y controllers
+4. **Registrá** todo en el módulo correspondiente
 
-2. **Token Renovado**: Después de validar, se obtiene un token renovado de la API externa que se usa para llamadas posteriores.
+## 🧠 Conceptos clave explicados
 
-3. **Roles en Header**: Los roles vienen en el header del JWT, no en el payload, por eso no se procesan en la entidad Token.
+### ¿Qué es un "Guard"?
+Es como el **portero de un edificio**. Decide si podés pasar o no antes de que llegues al controller.
 
-4. **Arquitectura Hexagonal**: El dominio no depende de nada, la aplicación solo del dominio, y la infraestructura implementa las interfaces del dominio.
+### ¿Qué es "Dependency Injection"?
+En lugar de que una clase cree sus dependencias, se las "inyectás" desde afuera. Es como darle las herramientas a un carpintero en lugar de que él las compre.
 
-5. **Manejo de Errores**: Los errores de APIs externas se retornan tal cual, salvo que sean muy feos (por configurar).
+### ¿Qué es un "Use Case"?
+Es un **manual de instrucciones** para hacer algo específico. Ej: "Cómo validar un usuario paso a paso".
 
-## 🚀 Próximos Pasos
+### ¿Qué es una "Entity"?
+Es un **objeto con identidad propia** que representa algo importante del negocio. Ej: un Token, un Usuario.
 
-- [ ] Tests unitarios e integración
-- [ ] Logging estructurado
-- [ ] Métricas y monitoring
-- [ ] Rate limiting
-- [ ] Caching de responses
-- [ ] CI/CD pipeline
-
-## 📞 Soporte
-
-Para problemas o preguntas, revisar:
-1. Logs de la aplicación
-2. Swagger docs en `/api/docs`
-3. Variables de entorno en `.env`
-4. Estructura de carpetas siguiendo arquitectura hexagonal
+### ¿Qué es un "Value Object"?
+Es un **objeto que no cambia** y se define por su valor, no por su identidad. Ej: un Email, una Fecha.
 
 ---
 
-⚡ **BFF listo para validar tokens y servir al frontend!**
+## 🎯 ¿Por qué esta arquitectura?
+
+- **🔧 Mantenible**: Cada cosa tiene su lugar
+- **🧪 Testeable**: Podés probar cada parte por separado  
+- **📈 Escalable**: Fácil agregar nuevas funcionalidades
+- **👥 Profesional**: Usada en empresas grandes
+- **📚 Educativa**: Te enseña patrones importantes
+
+---
+
+**¡Ahora ya sabés cómo armar un BFF con arquitectura DDD desde cero, loco!** 🇦🇷
+
+Para cualquier duda, revisá los comentarios en el código que están hechos para que entiendas todo paso a paso.
