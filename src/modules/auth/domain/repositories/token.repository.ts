@@ -22,19 +22,17 @@ import { Token } from '../entities/token.entity';
  * 
  * EJEMPLO DE USO:
  * ```typescript
- * // En el Use Case (dominio):
  * constructor(
- *   @Inject('ITokenValidationPort')
- *   private tokenValidationPort: ITokenValidationPort  // ← Interface, no implementación
+ *   @Inject('ITokenRepository')
+ *   private tokenRepository: ITokenRepository  // ← Interface, no implementación
  * ) {}
  * 
- * // En el módulo (configuración):
  * providers: [
- *   { provide: 'ITokenValidationPort', useClass: JwtAdapter }  // ← Implementación específica
+ *   { provide: 'ITokenRepository', useClass: JwtAdapter }  // ← Implementación específica
  * ]
  * ```
  */
-export interface ITokenValidationPort {
+export interface ITokenRepository {
   /**
    * Valida un token y retorna la entidad del dominio correspondiente
    * 

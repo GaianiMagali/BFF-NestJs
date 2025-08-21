@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { IExternalTokenValidationPort } from '../../domain/ports/external-token-validation.port';
+import { IExternalTokenRepository } from '../../domain/repositories/external-token.repository';
 import { UpstreamHttpException } from '../../domain/exceptions/token.exception';
 import type { ILoggerPort } from '../../../../shared/domain/ports/logger.port';
 
@@ -24,7 +24,7 @@ import type { ILoggerPort } from '../../../../shared/domain/ports/logger.port';
  * - Exception Translation: convierte errores técnicos a excepciones de dominio
  */
 @Injectable()
-export class TokenValidationAdapter implements IExternalTokenValidationPort {
+export class TokenValidationAdapter implements IExternalTokenRepository {
   constructor(
     @Inject('ILoggerPort')
     private readonly logger: ILoggerPort  // 🔌 Puerto para logging
@@ -73,16 +73,16 @@ export class TokenValidationAdapter implements IExternalTokenValidationPort {
     // - Rate limiting (429)
     // - Errores de red (timeout)
     if (Math.random() < 0.1) {
-      // Ejemplo de diferentes tipos de errores que pueden venir de la API
-      const errorTypes = [
-        { status: 401, message: 'Token inválido en sistema externo' },
-        { status: 403, message: 'Token sin permisos suficientes' },
-        { status: 503, message: 'Servicio de autenticación no disponible' },
-        { status: 429, message: 'Demasiadas requests - rate limit alcanzado' }
+      // Simulación de mensajes REALES que vendrían de APIs como Auth0, Keycloak, etc.
+      const apiErrorResponses = [
+        { status: 401, message: 'invalid_token: The access token provided is expired, revoked, malformed, or invalid' },
+        { status: 403, message: 'insufficient_scope: The request requires higher privileges than provided by the access token' },
+        { status: 503, message: 'temporarily_unavailable: The service is temporarily overloaded or under maintenance' },
+        { status: 429, message: 'rate_limit_exceeded: Too many requests have been made from this IP address' }
       ];
       
-      const randomIndex = Math.floor(Math.random() * errorTypes.length);
-      const randomError = errorTypes[randomIndex]!; // Non-null assertion porque sabemos que existe
+      const randomIndex = Math.floor(Math.random() * apiErrorResponses.length);
+      const randomError = apiErrorResponses[randomIndex]!; // Non-null assertion porque sabemos que existe
       this.logger.error(`Simulated external API error: ${randomError.status} - ${randomError.message}`, undefined, 'TokenValidationAdapter');
       throw new UpstreamHttpException(randomError.status, randomError.message);
     }

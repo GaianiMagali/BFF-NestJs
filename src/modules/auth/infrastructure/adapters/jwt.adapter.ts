@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
-import { ITokenValidationPort } from '../../domain/ports/token-validation.port';
+import { ITokenRepository } from '../../domain/repositories/token.repository';
 import { Token } from '../../domain/entities/token.entity';
 import { JwtPayload } from '../../domain/value-objects/jwt-payload.value-object';
 import { InvalidTokenException } from '../../domain/exceptions/token.exception';
@@ -15,7 +15,7 @@ import { InvalidTokenException } from '../../domain/exceptions/token.exception';
  * - Es la capa más externa - maneja detalles técnicos
  * 
  * ¿Por qué JwtAdapter es un Adapter?
- * - Implementa el puerto ITokenValidationPort 
+ * - Implementa el puerto ITokenRepository 
  * - Usa la librería 'jsonwebtoken' (tecnología específica)
  * - Traduce de JWT crudo a objetos del dominio (Token)
  * - Se puede reemplazar por OAuthAdapter, Auth0Adapter, etc.
@@ -26,7 +26,7 @@ import { InvalidTokenException } from '../../domain/exceptions/token.exception';
  * - Template Method: validateToken define el algoritmo, métodos privados los pasos
  */
 @Injectable()
-export class JwtAdapter implements ITokenValidationPort {
+export class JwtAdapter implements ITokenRepository {
   
   /**
    * 🎯 MÉTODO PRINCIPAL - Validar y parsear token JWT

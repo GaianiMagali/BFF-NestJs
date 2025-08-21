@@ -1,5 +1,5 @@
 
 
-export interface IExternalTokenValidationPort {
+export interface IExternalTokenRepository {
   validateAndRenewToken(originalToken: string): Promise<string>;
 }

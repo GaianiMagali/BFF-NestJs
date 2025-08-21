@@ -37,7 +37,7 @@ dotenv.config();
   app.setGlobalPrefix('api');
   app.enableCors();
   
-  const port = process.env.PORT || 3001;
+  const port = process.env.PORT || 3004;
   
   await app.listen(port);
   

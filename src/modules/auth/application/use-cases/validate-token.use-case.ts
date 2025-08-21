@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
-import type { ITokenValidationPort } from '../../domain/ports/token-validation.port';
-import type { IExternalTokenValidationPort } from '../../domain/ports/external-token-validation.port';
+import type { ITokenRepository } from '../../domain/repositories/token.repository';
+import type { IExternalTokenRepository } from '../../domain/repositories/external-token.repository';
 import { TokenValidationDomainService } from '../../domain/services/token-validation.domain-service';
 import { TokenValidationResponseDto, UserInfoDto } from '../dtos/token-validation-response.dto';
 import { MissingTokenException, InvalidTokenException, ExternalValidationException, UpstreamHttpException } from '../../domain/exceptions/token.exception';
@@ -40,10 +40,10 @@ import type { ILoggerPort } from '../../../../shared/domain/ports/logger.port';
 @Injectable()
 export class ValidateTokenUseCase {
   constructor(
-    @Inject('ITokenValidationPort')
-    private readonly tokenValidationPort: ITokenValidationPort,           // 🔌 Para validar formato JWT
-    @Inject('IExternalTokenValidationPort')
-    private readonly externalTokenValidationPort: IExternalTokenValidationPort, // 🔌 Para validar con API externa
+    @Inject('ITokenRepository')
+    private readonly tokenRepository: ITokenRepository,           // 🔌 Para validar formato JWT
+    @Inject('IExternalTokenRepository')
+    private readonly externalTokenRepository: IExternalTokenRepository, // 🔌 Para validar con API externa
     private readonly tokenValidationDomainService: TokenValidationDomainService, // 🔧 Para reglas de negocio
     @Inject('ILoggerPort')
     private readonly logger: ILoggerPort,                                 // 🔌 Para logging
@@ -87,7 +87,7 @@ export class ValidateTokenUseCase {
     this.logger.debug(`Starting token validation for token: ${tokenValue.substring(0, 20)}...`, 'ValidateTokenUseCase');
 
     // 🔍 PASO 2: Adapter - Parsear y validar formato JWT
-    const token = await this.tokenValidationPort.validateToken(tokenValue);
+    const token = await this.tokenRepository.validateToken(tokenValue);
     
     if (!token) {
       this.logger.warn('Token parsing failed - invalid format', 'ValidateTokenUseCase');
@@ -110,7 +110,7 @@ export class ValidateTokenUseCase {
 
     // 🌍 PASO 4: Adapter - Validar con API externa y renovar token
     try {
-      const validatedToken = await this.externalTokenValidationPort.validateAndRenewToken(tokenValue);
+      const validatedToken = await this.externalTokenRepository.validateAndRenewToken(tokenValue);
       
       // 📦 PASO 5: Builder - Construir respuesta exitosa
       const userInfo = new UserInfoDto(

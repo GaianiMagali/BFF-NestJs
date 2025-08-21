@@ -16,12 +16,12 @@ import { AuthExceptionMapper } from './infrastructure/exception-mappers/auth-exc
     TokenValidationDomainService,
     
     {
-      provide: 'ITokenValidationPort',
+      provide: 'ITokenRepository',
       useClass: JwtAdapter,
     },
     
     {
-      provide: 'IExternalTokenValidationPort',
+      provide: 'IExternalTokenRepository',
       useClass: TokenValidationAdapter,
     },
     
@@ -38,7 +38,7 @@ import { AuthExceptionMapper } from './infrastructure/exception-mappers/auth-exc
     ValidateTokenUseCase,
     TokenValidationGuard,
     AuthExceptionMapper,
-    'ITokenValidationPort',
+    'ITokenRepository',
     'ILoggerPort'
   ],
 })

@@ -1,3 +1,4 @@
+
 export class ErrorResponseDto {
   readonly success: boolean = false;
   readonly timestamp: string;

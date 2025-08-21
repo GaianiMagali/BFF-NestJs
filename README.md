@@ -352,116 +352,170 @@ class TokenInvalidoException extends Error {
 ```mermaid
 graph TD
     %% Inicio
-    START[👤 Usuario abre la app<br/>Tiene token guardado] 
+    START[👤 Usuario abre la app<br/>Token guardado: eyJhbGciOiJIUzI1NiIs...] 
     
     %% Infrastructure - Entrada
-    subgraph "🔧 INFRASTRUCTURE - Entrada"
-        REQ[📱 Frontend envía<br/>GET /api<br/>Authorization: Bearer token123]
-        GUARD[🛡️ TokenValidationGuard<br/>"¿Tenés token válido?"]
-        CTRL[📡 AuthController<br/>"OK, procesemos esto"]
+    subgraph "🔧 INFRASTRUCTURE - Driving Adapters"
+        REQ[📱 HTTP Request<br/>GET /api<br/>Authorization: Bearer token123]
+        GUARD[🛡️ TokenValidationGuard<br/>Security Adapter<br/>Extrae header Authorization]
+        CTRL[📡 AuthController<br/>HTTP Adapter<br/>Traduce HTTP → Domain]
     end
     
     %% Application
-    subgraph "📋 APPLICATION - Casos de Uso"
-        UC[🎯 ValidateTokenUseCase<br/>"Voy a validar tu token paso a paso"]
+    subgraph "📋 APPLICATION - Orchestration"
+        UC[🎯 ValidateTokenUseCase<br/>Application Service<br/>Orquesta validación completa]
+        UDTO[👤 UserInfoDto<br/>Data Transfer Object<br/>Info segura del usuario]
+        RDTO[📦 TokenValidationResponseDto<br/>Response DTO<br/>Empaqueta respuesta final]
     end
     
-    %% Domain - Núcleo
-    subgraph "🏛️ DOMAIN - Reglas de Negocio"
-        ENT[📊 Token Entity<br/>"Soy un token con datos"]
-        VO[💎 JwtPayload<br/>"Contengo: usuario, expiración"]
-        DS[🔧 TokenValidationService<br/>"¿Este token cumple las reglas?"]
-        PORT1[🔌 ITokenValidationPort<br/>"Necesito validar localmente"]
-        PORT2[🔌 IExternalValidationPort<br/>"Necesito validar externamente"]
+    %% Domain - Núcleo con TODOS los componentes
+    subgraph "🏛️ DOMAIN - Business Core"
+        %% Entities
+        ENT[📊 Token Entity<br/>Identidad: Credencial única<br/>Comportamientos: isExpired()]
+        
+        %% Value Objects  
+        VO[💎 JwtPayload Value Object<br/>Inmutable: sub, username, exp, iss<br/>Métodos: isExpired(), toString()]
+        
+        %% Domain Services
+        DS[🔧 TokenValidationDomainService<br/>Reglas de Negocio<br/>validateTokenBusinessRules()]
+        
+        %% Ports (Interfaces)
+        PORT1[🔌 ITokenRepository<br/>Output Port<br/>validateToken(): Token]
+        PORT2[🔌 IExternalTokenRepository<br/>Output Port<br/>validateAndRenewToken(): string]
+        PORTLOG[🔌 ILoggerPort<br/>Output Port<br/>log(), error(), warn()]
+        
+        %% Domain Exceptions
+        EXC1[❌ TokenExpiredException<br/>Domain Exception<br/>code: TOKEN_EXPIRED]
+        EXC2[❌ InvalidTokenException<br/>Domain Exception<br/>code: INVALID_TOKEN]
+        EXC3[❌ MissingTokenException<br/>Domain Exception<br/>code: MISSING_TOKEN]
+        EXC4[❌ UpstreamHttpException<br/>Domain Exception<br/>code: UPSTREAM_HTTP_ERROR]
     end
     
-    %% Infrastructure - Adapters
-    subgraph "🔧 INFRASTRUCTURE - Adaptadores"
-        JWT[🔍 JwtAdapter<br/>"Decodifico el JWT"]
-        EXT[🌍 TokenValidationAdapter<br/>"Llamo a API externa"]
-        API[🏢 API Externa<br/>"Auth0/Keycloak"]
+    %% Infrastructure - Adapters de Salida
+    subgraph "🔧 INFRASTRUCTURE - Driven Adapters"
+        JWT[🔍 JwtAdapter<br/>Token Validation Adapter<br/>Implementa: ITokenRepository<br/>jwt.decode() sin verificar firma]
+        EXT[🌍 TokenValidationAdapter<br/>External API Adapter<br/>Implementa: IExternalTokenRepository<br/>Conecta con Auth0/Keycloak]
+        LOG[📝 ConsoleLoggerAdapter<br/>Logger Adapter<br/>Implementa: ILoggerPort<br/>console.log(), console.error()]
+        API[🏢 API Externa<br/>Auth Service<br/>POST /validate-token<br/>Response: renewedToken]
+    end
+    
+    %% Shared Infrastructure
+    subgraph "🛡️ SHARED INFRASTRUCTURE - Error Handling"
+        FILTER[🛡️ DomainExceptionFilter<br/>Exception Filter<br/>DomainException → HTTP Response]
+        BASEEXC[❌ DomainException<br/>Base Exception<br/>abstract class con code]
     end
     
     %% Response
-    subgraph "📤 RESPUESTA"
-        DTO[📦 TokenValidationResponseDto<br/>"Usuario: Juan, Token renovado"]
-        RESP[✅ 200 OK<br/>{"user": "Juan", "newToken": "abc123"}]
+    subgraph "📤 HTTP RESPONSE"
+        SUCCESS[✅ 200 OK<br/>{"message": "Validación exitosa",<br/>"user": {"sub": "123", "username": "juan"},<br/>"validatedToken": "renewed_abc..."}]
+        ERROR[❌ 401/503 Error<br/>{"error": true, "statusCode": 401,<br/>"errorCode": "TOKEN_EXPIRED",<br/>"message": "El token ha expirado"}]
     end
     
-    %% Error Path
-    subgraph "❌ ERRORES"
-        ERR1[🚨 TokenExpiredException<br/>"Tu token expiró"]
-        ERR2[🚨 InvalidTokenException<br/>"Token inválido"]
-        FILTER[🛡️ DomainExceptionFilter<br/>"Convierto errores a JSON"]
-        ERR_RESP[❌ 401 Unauthorized<br/>{"error": "TOKEN_EXPIRED"}]
-    end
-    
-    %% Flujo principal
+    %% FLUJO PRINCIPAL
     START --> REQ
     REQ --> GUARD
-    GUARD -->|✅ Token presente| CTRL
-    GUARD -->|❌ Token faltante| ERR2
+    GUARD -->|✅ Header presente| CTRL
+    GUARD -->|❌ Header faltante| EXC3
     
     CTRL --> UC
-    UC --> JWT
-    JWT --> VO
-    VO --> ENT
-    UC --> DS
-    DS -->|✅ Token válido| UC
-    DS -->|❌ Token expirado| ERR1
     
-    UC --> EXT
-    EXT --> API
-    API --> EXT
-    EXT --> UC
+    %% Use Case usa Ports (Inversión de Dependencias)
+    UC -.->|Depende de| PORT1
+    UC -.->|Depende de| PORT2  
+    UC -.->|Depende de| PORTLOG
     
-    UC --> DTO
-    DTO --> RESP
+    %% Adapters implementan Ports
+    JWT -.->|Implementa| PORT1
+    EXT -.->|Implementa| PORT2
+    LOG -.->|Implementa| PORTLOG
     
-    %% Flujo de errores
-    ERR1 --> FILTER
-    ERR2 --> FILTER
-    FILTER --> ERR_RESP
+    %% Flujo de validación
+    UC -->|Llama via Port1| JWT
+    JWT -->|Crea| VO
+    VO -->|Se encapsula en| ENT
+    JWT -->|Retorna| ENT
     
-    %% Puertos
-    UC -.-> PORT1
-    UC -.-> PORT2
-    JWT -.-> PORT1
-    EXT -.-> PORT2
+    UC -->|Usa| DS
+    DS -->|Valida| ENT
+    DS -->|Si expirado| EXC1
+    DS -->|Si claims inválidos| EXC2
+    
+    UC -->|Llama via Port2| EXT
+    EXT -->|HTTP Call| API
+    API -->|Response| EXT
+    EXT -->|Error API| EXC4
+    
+    %% Construcción de respuesta
+    UC -->|Crea| UDTO
+    UC -->|Crea| RDTO
+    RDTO --> SUCCESS
+    
+    %% Manejo de errores
+    EXC1 --> BASEEXC
+    EXC2 --> BASEEXC  
+    EXC3 --> BASEEXC
+    EXC4 --> BASEEXC
+    BASEEXC --> FILTER
+    FILTER --> ERROR
     
     %% Estilos
     classDef start fill:#e1f5fe
     classDef infrastructure fill:#fff3e0
     classDef application fill:#f3e5f5
     classDef domain fill:#e8f5e8
-    classDef response fill:#e8f5e8
+    classDef entity fill:#c8e6c9
+    classDef valueobject fill:#e1bee7
+    classDef domainservice fill:#ffccbc
+    classDef port fill:#fff9c4,stroke:#f57f17,stroke-width:2px,stroke-dasharray: 5 5
+    classDef exception fill:#ffcdd2
+    classDef adapter fill:#e3f2fd
+    classDef response fill:#f1f8e9
     classDef error fill:#ffebee
-    classDef port fill:#f1f8e9,stroke-dasharray: 5 5
     
     class START start
-    class REQ,GUARD,CTRL,JWT,EXT,API infrastructure
+    class REQ,GUARD,CTRL infrastructure
     class UC application
-    class ENT,VO,DS domain
-    class DTO,RESP response
-    class ERR1,ERR2,FILTER,ERR_RESP error
-    class PORT1,PORT2 port
+    class UDTO,RDTO application
+    class ENT entity
+    class VO valueobject  
+    class DS domainservice
+    class PORT1,PORT2,PORTLOG port
+    class EXC1,EXC2,EXC3,EXC4,BASEEXC exception
+    class JWT,EXT,LOG,API adapter
+    class FILTER infrastructure
+    class SUCCESS,ERROR response
 ```
 
-### 🔄 **Explicación Paso a Paso**
+### 🔄 **Explicación Paso a Paso con TODOS los Componentes**
 
-| Paso | Capa | Archivo | ¿Qué hace? | Ejemplo de la vida |
-|------|------|---------|------------|-------------------|
-| 1 | 📱 | Frontend | Envía request con token | Cliente muestra su DNI en la entrada |
-| 2 | 🛡️ | `token-validation.guard.ts` | Revisa si hay token | Portero revisa que tengas credencial |
-| 3 | 📡 | `auth.controller.ts` | Recibe el request | Recepcionista toma tu solicitud |
-| 4 | 🎯 | `validate-token.use-case.ts` | Orquesta todo el proceso | Gerente coordina toda la validación |
-| 5 | 🔍 | `jwt.adapter.ts` | Decodifica el token JWT | Experto lee tu credencial |
-| 6 | 💎 | `jwt-payload.value-object.ts` | Extrae los datos | Se sacan los datos de tu DNI |
-| 7 | 📊 | `token.entity.ts` | Crea el objeto Token | Se crea tu "ficha" interna |
-| 8 | 🔧 | `token-validation.domain-service.ts` | Aplica reglas de negocio | Se revisan las reglas: ¿está vigente? |
-| 9 | 🌍 | `token-validation.adapter.ts` | Valida con API externa | Llaman a la policía para confirmar |
-| 10 | 📦 | `token-validation-response.dto.ts` | Arma la respuesta | Preparan tu pase de entrada |
-| 11 | ✅ | `auth.controller.ts` | Envía respuesta exitosa | Te entregan tu pase: "Bienvenido" |
+| Paso | Capa | Archivo/Componente | Tipo | ¿Qué hace? | Ejemplo de la vida |
+|------|------|--------------------|------|------------|-------------------|
+| 1 | 🌍 | Frontend | Cliente | Envía request con token | Cliente muestra DNI en la entrada |
+| 2 | 🔧 | `token-validation.guard.ts` | **Security Adapter** | Intercepta y verifica headers | Portero revisa que traigas credencial |
+| 3 | 🔧 | `auth.controller.ts` | **Driving Adapter** | Traduce HTTP a dominio | Traductor convierte idiomas |
+| 4 | 📋 | `validate-token.use-case.ts` | **Application Service** | Orquesta todo el proceso | Gerente coordina validación |
+| 5a | 🔌 | `token-validation.port.ts` | **Puerto de Salida** | Define contrato para JWT | "Necesito leer credenciales" |
+| 5b | 🔧 | `jwt.adapter.ts` | **Driven Adapter** | Implementa lectura JWT | Máquina lectora de DNIs |
+| 6 | 💎 | `jwt-payload.value-object.ts` | **Value Object** | Datos inmutables extraídos | Datos impresos en tu DNI |
+| 7 | 📊 | `token.entity.ts` | **Entity** | Objeto con identidad única | Tu "ficha personal" completa |
+| 8 | 🔧 | `token-validation.domain-service.ts` | **Domain Service** | Aplica reglas de negocio | Inspector aplica reglamento |
+| 9a | 🔌 | `external-token-validation.port.ts` | **Puerto de Salida** | Define contrato para API externa | "Necesito verificar con central" |
+| 9b | 🔧 | `token-validation.adapter.ts` | **Driven Adapter** | Conecta con API externa | Teléfono para llamar a policía |
+| 10 | 🏢 | API Externa | Sistema Externo | Valida y renueva token | Base de datos policial |
+| 11 | 📦 | `token-validation-response.dto.ts` | **DTO** | Empaqueta respuesta | Certificado oficial armado |
+| 12 | 🔧 | `auth.controller.ts` | **Driving Adapter** | Convierte respuesta a HTTP | Traductor devuelve en tu idioma |
+| 13 | 🌍 | Frontend | Cliente | Recibe respuesta JSON | Recibes tu pase de entrada |
+
+### 📋 **Flujo de Errores con Componentes Específicos**
+
+| Error | Capa | Archivo/Componente | Tipo | ¿Qué hace? | Resultado HTTP |
+|-------|------|--------------------|------|------------|----------------|
+| Token faltante | 🔧 | `token-validation.guard.ts` | **Security Adapter** | Detecta header vacío | 401 Unauthorized |
+| Token malformado | 🔧 | `jwt.adapter.ts` | **Driven Adapter** | No puede decodificar | `InvalidTokenException` |
+| Token expirado | 📊 | `token.entity.ts` | **Entity** | Revisa fecha vencimiento | `TokenExpiredException` |
+| Reglas fallidas | 🔧 | `token-validation.domain-service.ts` | **Domain Service** | Claims inválidos | `InvalidTokenClaimsException` |
+| API externa caída | 🔧 | `token-validation.adapter.ts` | **Driven Adapter** | Error HTTP 503 | `UpstreamHttpException` |
+| Traducción a HTTP | 🔧 | `domain-exception.filter.ts` | **Exception Filter** | Convierte a JSON | Response HTTP final |
 
 ---
 
@@ -681,7 +735,7 @@ export class InvalidTokenException extends DomainException {
 
 **token-validation.port.ts** - "Necesito validar tokens localmente"
 ```typescript
-export interface ITokenValidationPort {
+export interface ITokenRepository {
   // 🔍 "Dame un token, te digo si es válido"
   validateToken(tokenValue: string): Promise<Token | null>;
 }
@@ -689,7 +743,7 @@ export interface ITokenValidationPort {
 
 **external-token-validation.port.ts** - "Necesito validar con sistema externo"
 ```typescript
-export interface IExternalTokenValidationPort {
+export interface IExternalTokenRepository {
   // 🌍 "Valida este token con el sistema autoritativo"
   validateAndRenewToken(token: string): Promise<string>;
 }
@@ -833,7 +887,7 @@ export class TokenValidationGuard implements CanActivate {
 
 #### 🔍 **jwt.adapter.ts** - El Decodificador
 ```typescript
-export class JwtAdapter implements ITokenValidationPort {
+export class JwtAdapter implements ITokenRepository {
   async validateToken(tokenValue: string): Promise<Token | null> {
     try {
       // 🧹 "Limpio el token (saco el 'Bearer ')"
@@ -865,7 +919,7 @@ export class JwtAdapter implements ITokenValidationPort {
 
 #### 🌍 **token-validation.adapter.ts** - El Verificador Externo
 ```typescript
-export class TokenValidationAdapter implements IExternalTokenValidationPort {
+export class TokenValidationAdapter implements IExternalTokenRepository {
   async validateAndRenewToken(originalToken: string): Promise<string> {
     
     // 🎲 Simula errores aleatorios (10% del tiempo)
@@ -1021,3 +1075,962 @@ Igual que una ciudad bien planificada hace la vida más fácil, un código bien 
 ---
 
 **¡Ahora ya sabés cómo funciona la arquitectura de software profesional! 🎉**
+
+---
+
+## 🏗️ Componentes Detallados de Arquitectura Hexagonal
+
+### 📊 **ENTITIES (Entidades)** - Los Objetos del Negocio
+
+#### ¿Qué son las Entities?
+- **Objetos con IDENTIDAD única** que persiste en el tiempo
+- **Contienen lógica de negocio** específica del objeto
+- **Su identidad NO cambia** aunque cambien sus propiedades
+- **Son mutables** pero su identidad permanece constante
+- **Encapsulan comportamientos** del objeto de dominio
+
+#### 🔍 **Ejemplo: Token Entity**
+
+```typescript
+// 📄 src/modules/auth/domain/entities/token.entity.ts
+
+export class Token {
+  constructor(private payload: JwtPayload) {}
+  
+  // 🆔 IDENTIDAD: Cada token es único por su payload.sub
+  get id(): string {
+    return this.payload.sub;
+  }
+  
+  // 🔧 COMPORTAMIENTOS: Lógica que puede hacer un token
+  isExpired(): boolean {
+    return this.payload.isExpired();
+  }
+  
+  get username(): string {
+    return this.payload.username;
+  }
+  
+  get sub(): string {
+    return this.payload.sub;
+  }
+  
+  // 📋 REGLA DE NEGOCIO: Un token es válido si no está expirado
+  isValid(): boolean {
+    return !this.isExpired();
+  }
+  
+  // 🔄 COMPORTAMIENTO: Comparar tokens por identidad
+  equals(other: Token): boolean {
+    return this.id === other.id;
+  }
+}
+```
+
+#### 🌟 **Características de una Entity**
+| Característica | Explicación | Ejemplo de la vida |
+|----------------|-------------|-------------------|
+| **🆔 Identidad única** | Cada entity tiene un ID que la distingue | Tu DNI - aunque cambies tu nombre, tu número de documento es único |
+| **🔄 Mutable** | Puede cambiar sus propiedades | Puedes mudarte (cambiar dirección) pero seguís siendo vos |
+| **🎯 Comportamientos** | Sabe qué puede hacer | Una persona sabe si está viva, su edad, si puede votar |
+| **📋 Reglas de negocio** | Contiene lógica específica del objeto | Un auto sabe si está encendido, si tiene combustible |
+
+---
+
+### 💎 **VALUE OBJECTS (Objetos de Valor)** - Los Datos Inmutables
+
+#### ¿Qué son los Value Objects?
+- **Objetos sin identidad** que se identifican por su VALOR
+- **Son completamente inmutables** (readonly)
+- **Dos VOs con mismo valor son IGUALES**
+- **Encapsulan validaciones** de formato/contenido
+- **Representan conceptos simples** del dominio
+
+#### 🔍 **Ejemplo: JwtPayload Value Object**
+
+```typescript
+// 📄 src/modules/auth/domain/value-objects/jwt-payload.value-object.ts
+
+export class JwtPayload {
+  constructor(
+    public readonly sub: string,      // 🆔 ID del usuario
+    public readonly username: string, // 👤 Nombre de usuario
+    public readonly exp: number,      // ⏰ Timestamp de expiración
+    public readonly iss: string       // 🏢 Emisor del token
+  ) {
+    this.validateStructure();
+  }
+  
+  // ✅ FACTORY METHOD: Crear desde token decodificado
+  static fromDecodedToken(decoded: any): JwtPayload {
+    return new JwtPayload(
+      decoded.sub,
+      decoded.username,
+      decoded.exp,
+      decoded.iss
+    );
+  }
+  
+  // 🔍 VALIDACIÓN: Verificar estructura
+  private validateStructure(): void {
+    if (!this.sub) throw new InvalidTokenException('Missing sub claim');
+    if (!this.username) throw new InvalidTokenException('Missing username claim');
+    if (!this.exp || this.exp <= 0) throw new InvalidTokenException('Invalid exp claim');
+    if (!this.iss) throw new InvalidTokenException('Missing iss claim');
+  }
+  
+  // ⏰ COMPORTAMIENTO: ¿Está expirado?
+  isExpired(): boolean {
+    return Date.now() / 1000 > this.exp;
+  }
+  
+  // 🔄 IGUALDAD: Dos payloads son iguales si tienen el mismo valor
+  equals(other: JwtPayload): boolean {
+    return (
+      this.sub === other.sub &&
+      this.username === other.username &&
+      this.exp === other.exp &&
+      this.iss === other.iss
+    );
+  }
+  
+  // 📄 REPRESENTACIÓN: Para logs y debugging
+  toString(): string {
+    return `JwtPayload(sub: ${this.sub}, username: ${this.username}, exp: ${new Date(this.exp * 1000).toISOString()})`;
+  }
+}
+```
+
+#### 🌟 **Características de un Value Object**
+| Característica | Explicación | Ejemplo de la vida |
+|----------------|-------------|-------------------|
+| **💎 Sin identidad** | Se identifica por su valor, no por un ID | $100 es $100, no importa qué billete específico |
+| **🔒 Inmutable** | No puede cambiar después de crearse | Una fecha: 25 de Mayo de 1810 es siempre esa fecha |
+| **⚖️ Igualdad por valor** | Dos VOs iguales son intercambiables | Dos monedas de $1 son exactamente lo mismo |
+| **✅ Auto-validación** | Se valida a sí mismo al crearse | Un email debe tener @ y formato correcto |
+
+---
+
+### 🔧 **DOMAIN SERVICES (Servicios de Dominio)** - La Lógica de Negocio
+
+#### ¿Qué son los Domain Services?
+- **Lógica de negocio** que NO pertenece a una Entity específica
+- **Operaciones complejas** que involucran múltiples entidades
+- **Reglas del dominio** que son procesos, no objetos
+- **Stateless** - no guardan estado interno
+- **Pura lógica de negocio** sin dependencias técnicas
+
+#### 🔍 **Ejemplo: TokenValidationDomainService**
+
+```typescript
+// 📄 src/modules/auth/domain/services/token-validation.domain-service.ts
+
+@Injectable()
+export class TokenValidationDomainService {
+  
+  /**
+   * 📋 REGLA PRINCIPAL: Validar todas las reglas de negocio del token
+   * 
+   * Esta lógica NO pertenece a Token entity porque:
+   * - Puede involucrar múltiples objetos (token, usuario, contexto)
+   * - Son reglas del DOMINIO, no del objeto específico
+   * - Pueden cambiar según el contexto del negocio
+   * - Son procesos complejos que requieren múltiples validaciones
+   */
+  validateTokenBusinessRules(token: Token): boolean {
+    
+    // 🚨 REGLA 1: Token debe estar presente
+    this.ensureTokenExists(token);
+    
+    // 🚨 REGLA 2: Token no debe estar expirado
+    this.ensureTokenNotExpired(token);
+    
+    // 🚨 REGLA 3: Claims deben ser válidos
+    this.ensureValidClaims(token);
+    
+    // 🚨 REGLA 4: Usuario debe existir en el sistema
+    this.ensureUserExists(token);
+    
+    // ✅ Si llega hasta acá, todas las reglas pasaron
+    return true;
+  }
+  
+  // 🔍 REGLA ESPECÍFICA: Validar existencia
+  private ensureTokenExists(token: Token): void {
+    if (!token) {
+      throw new InvalidTokenException('Token is required');
+    }
+  }
+  
+  // ⏰ REGLA ESPECÍFICA: Validar expiración
+  private ensureTokenNotExpired(token: Token): void {
+    if (token.isExpired()) {
+      throw new TokenExpiredException('Token has expired');
+    }
+  }
+  
+  // 📋 REGLA ESPECÍFICA: Validar claims
+  private ensureValidClaims(token: Token): void {
+    if (!token.sub || token.sub.trim() === '') {
+      throw new InvalidTokenClaimsException('Token sub claim is invalid');
+    }
+    
+    if (!token.username || token.username.trim() === '') {
+      throw new InvalidTokenClaimsException('Token username claim is invalid');
+    }
+    
+    // 📏 REGLA DE NEGOCIO: Username debe tener al menos 3 caracteres
+    if (token.username.length < 3) {
+      throw new InvalidTokenClaimsException('Username must be at least 3 characters');
+    }
+  }
+  
+  // 👤 REGLA ESPECÍFICA: Usuario debe existir (lógica simulada)
+  private ensureUserExists(token: Token): void {
+    // En un caso real, esto podría consultar un repositorio
+    // Simulamos que algunos usuarios no existen
+    const invalidUsers = ['deleted_user', 'banned_user', 'inactive_user'];
+    
+    if (invalidUsers.includes(token.username)) {
+      throw new InvalidTokenClaimsException('User does not exist or is inactive');
+    }
+  }
+  
+  /**
+   * 🔄 REGLA FUTURA: Validar contexto de seguridad
+   * 
+   * Ejemplo de cómo agregar más reglas de negocio complejas
+   */
+  // validateSecurityContext(token: Token, ipAddress: string, userAgent: string): boolean {
+  //   // REGLA: No permitir tokens de usuarios suspendidos
+  //   // REGLA: Bloquear IPs sospechosas
+  //   // REGLA: Detectar patrones de uso anómalos
+  //   return true;
+  // }
+}
+```
+
+#### 🌟 **¿Cuándo usar Domain Services?**
+| Situación | ¿Domain Service? | Ejemplo |
+|-----------|-----------------|---------|
+| Lógica que pertenece a 1 entidad | ❌ No, va en la Entity | `user.changePassword()` |
+| Lógica que involucra 2+ entidades | ✅ Sí | Transferir dinero entre cuentas |
+| Reglas complejas del dominio | ✅ Sí | Calcular impuestos según múltiples factores |
+| Validaciones específicas del negocio | ✅ Sí | Validar que un préstamo cumple criterios |
+
+---
+
+### 🔌 **PORTS (Puertos)** - Los Contratos de Comunicación
+
+#### ¿Qué son los Ports?
+- **Interfaces/contratos** que define el dominio
+- **Especifican QUÉ** necesita el dominio, no CÓMO
+- **Inversión de dependencias:** dominio define, infrastructure implementa
+- **Abstracción** que permite intercambiar implementaciones
+- **Boundary** entre dominio e infrastructure
+
+#### 🚪 **Input Ports vs Output Ports**
+
+```typescript
+// 🚪 INPUT PORT: El dominio ofrece servicios hacia afuera
+// Implementado por Use Cases, usado por Controllers
+export interface ITokenValidationUseCase {
+  execute(tokenValue: string): Promise<TokenValidationResponseDto>;
+}
+
+// 🔌 OUTPUT PORT: El dominio necesita servicios externos  
+// Definido por dominio, implementado por Adapters
+export interface ITokenRepository {
+  validateToken(tokenValue: string): Promise<Token | null>;
+}
+```
+
+#### 🔍 **Ejemplo: Output Ports del Sistema**
+
+```typescript
+// 📄 src/modules/auth/domain/ports/token-validation.port.ts
+
+/**
+ * 🔌 OUTPUT PORT: Contrato para validación local de tokens
+ * 
+ * ¿Por qué es un Output Port?
+ * - El DOMINIO necesita este servicio (output del dominio)
+ * - Define QUÉ necesita (leer/validar tokens)
+ * - NO define CÓMO (JWT, OAuth, etc.)
+ * - Permite múltiples implementaciones (JWT, SAML, Custom)
+ */
+export interface ITokenRepository {
+  /**
+   * Valida formato y estructura de un token
+   * @param tokenValue - Token crudo a validar
+   * @returns Token domain object o null si es inválido
+   */
+  validateToken(tokenValue: string): Promise<Token | null>;
+}
+
+// 📄 src/modules/auth/domain/ports/external-token-validation.port.ts
+
+/**
+ * 🌍 OUTPUT PORT: Contrato para validación externa
+ * 
+ * ¿Por qué separarlo del anterior?
+ * - Responsabilidades diferentes: local vs externa
+ * - Diferentes implementaciones: JWT decoder vs HTTP client
+ * - Diferentes errores: parsing vs network
+ * - Principio de responsabilidad única
+ */
+export interface IExternalTokenRepository {
+  /**
+   * Valida token con sistema autoritativo y lo renueva
+   * @param originalToken - Token a validar externamente
+   * @returns Token renovado del sistema externo
+   */
+  validateAndRenewToken(originalToken: string): Promise<string>;
+}
+
+// 📄 src/shared/domain/ports/logger.port.ts
+
+/**
+ * 📝 OUTPUT PORT: Contrato para logging
+ * 
+ * El dominio necesita loggear pero no le importa dónde:
+ * - Console, archivo, base de datos, servicio externo
+ * - Diferentes formatos: JSON, texto, estructurado
+ * - Diferentes niveles: debug, info, warn, error
+ */
+export interface ILoggerPort {
+  debug(message: string, context?: string): void;
+  log(message: string, context?: string): void;
+  warn(message: string, context?: string): void;
+  error(message: string, stack?: string, context?: string): void;
+}
+```
+
+#### 🏗️ **Arquitectura: ¿Por qué Ports?**
+
+```mermaid
+graph TB
+    subgraph "🏛️ DOMAIN LAYER"
+        UC[🎯 Use Case<br/>Necesita validar tokens]
+        PORT1[🔌 ITokenRepository<br/>Define QUÉ necesita]
+        PORT2[🔌 IExternalValidationPort<br/>Define QUÉ necesita]
+    end
+    
+    subgraph "🔧 INFRASTRUCTURE LAYER"
+        JWT[🔍 JwtAdapter<br/>CÓMO: usa jwt.decode()]
+        API[🌍 HttpAdapter<br/>CÓMO: hace HTTP calls]
+        LOG[📝 ConsoleLogger<br/>CÓMO: console.log()]
+    end
+    
+    UC -.->|"Depende de interface"| PORT1
+    UC -.->|"Depende de interface"| PORT2
+    
+    JWT -.->|"Implementa"| PORT1
+    API -.->|"Implementa"| PORT2
+    
+    %% Inversión de dependencias
+    style UC fill:#e6ffe6
+    style PORT1 fill:#fff9c4,stroke:#f57f17,stroke-width:2px,stroke-dasharray: 5 5
+    style PORT2 fill:#fff9c4,stroke:#f57f17,stroke-width:2px,stroke-dasharray: 5 5
+    style JWT fill:#e3f2fd
+    style API fill:#e3f2fd
+```
+
+---
+
+### 🔧 **ADAPTERS (Adaptadores)** - Los Traductores
+
+#### ¿Qué son los Adapters?
+- **Implementaciones concretas** de los Ports
+- **Traducen** entre el dominio y tecnologías específicas
+- **Driving Adapters:** inician acciones (Controllers, Guards)
+- **Driven Adapters:** son usados por el dominio (Repositories, APIs)
+
+#### 📡 **Driving Adapters - "Conducen" el Dominio**
+
+```typescript
+// 📄 src/modules/auth/infrastructure/controllers/auth.controller.ts
+
+/**
+ * 📡 DRIVING ADAPTER: HTTP → Domain
+ * 
+ * ¿Por qué es Driving?
+ * - INICIA acciones en el dominio
+ * - Traduce HTTP → llamadas de dominio
+ * - Punto de ENTRADA desde el exterior
+ * - Conduce/maneja el flujo hacia adentro
+ */
+@Controller()
+export class AuthController {
+  constructor(
+    private readonly validateTokenUseCase: ValidateTokenUseCase
+  ) {}
+  
+  @Get()
+  @UseGuards(TokenValidationGuard)
+  async validateToken(@Req() req: RequestWithTokenData): Promise<TokenValidationResponseDto> {
+    // 🔄 TRADUCCIÓN: HTTP Request → Domain Call
+    return await this.validateTokenUseCase.execute(req.tokenValue);
+  }
+}
+
+// 📄 src/modules/auth/infrastructure/guards/token-validation.guard.ts
+
+/**
+ * 🛡️ DRIVING ADAPTER: Security → Domain
+ * 
+ * ¿Por qué es Driving?
+ * - INTERCEPTA requests antes del dominio
+ * - CONDUCE la validación de seguridad
+ * - Punto de ENTRADA para autenticación
+ */
+@Injectable()
+export class TokenValidationGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    
+    // 🔄 TRADUCCIÓN: HTTP Headers → Domain Requirements
+    const token = this.extractTokenFromHeader(request);
+    
+    if (!token) {
+      throw new MissingTokenException();
+    }
+    
+    request.tokenValue = token;
+    return true;
+  }
+}
+```
+
+#### 🔌 **Driven Adapters - "Conducidos" por el Dominio**
+
+```typescript
+// 📄 src/modules/auth/infrastructure/adapters/jwt.adapter.ts
+
+/**
+ * 🔍 DRIVEN ADAPTER: Domain → JWT Technology
+ * 
+ * ¿Por qué es Driven?
+ * - Es USADO por el dominio (no lo conduce)
+ * - El dominio LLAMA a este adapter
+ * - Traduce llamadas de dominio → tecnología específica
+ * - Punto de SALIDA hacia herramientas externas
+ */
+@Injectable()
+export class JwtAdapter implements ITokenRepository {
+  
+  async validateToken(tokenValue: string): Promise<Token | null> {
+    try {
+      // 🧹 PASO 1: Limpiar token
+      const cleanToken = this.extractBearerToken(tokenValue);
+      
+      // 🔧 PASO 2: Usar tecnología específica (jwt.decode)
+      const decoded = jwt.decode(cleanToken);
+      
+      if (!decoded || typeof decoded !== 'object') {
+        throw new InvalidTokenException();
+      }
+      
+      // ✅ PASO 3: Validar estructura antes de crear objetos
+      this.validatePayloadStructure(decoded);
+      
+      // 📦 PASO 4: Traducir a objetos de dominio
+      const payload = JwtPayload.fromDecodedToken(decoded);
+      return new Token(payload);
+      
+    } catch (error) {
+      if (error instanceof DomainException) {
+        throw error; // Re-lanzar excepciones de dominio
+      }
+      throw new InvalidTokenException();
+    }
+  }
+  
+  private validatePayloadStructure(payload: any): void {
+    const requiredFields = ['sub', 'username', 'exp', 'iss'];
+    for (const field of requiredFields) {
+      if (!(field in payload)) {
+        throw new InvalidTokenException(`Missing required field: ${field}`);
+      }
+    }
+  }
+}
+
+// 📄 src/modules/auth/infrastructure/adapters/token-validation.adapter.ts
+
+/**
+ * 🌍 DRIVEN ADAPTER: Domain → External API
+ */
+@Injectable()
+export class TokenValidationAdapter implements IExternalTokenRepository {
+  
+  async validateAndRenewToken(originalToken: string): Promise<string> {
+    // 🎲 Simulación de llamada HTTP real
+    if (Math.random() < 0.1) {
+      const errorTypes = [
+        { status: 401, message: 'Token inválido en sistema externo' },
+        { status: 503, message: 'Servicio de autenticación no disponible' }
+      ];
+      
+      const error = errorTypes[Math.floor(Math.random() * errorTypes.length)]!;
+      throw new UpstreamHttpException(error.status, error.message);
+    }
+    
+    // En producción sería:
+    // const response = await this.httpClient.post('/api/validate', { token: originalToken });
+    // return response.data.renewedToken;
+    
+    return `renewed_${originalToken.substring(0, 20)}...${Date.now()}`;
+  }
+}
+```
+
+#### 🌟 **Driving vs Driven Adapters**
+
+```mermaid
+graph LR
+    subgraph "🌍 MUNDO EXTERIOR"
+        WEB[🌐 Web]
+        CLI[⌨️ CLI]
+        API_EXT[🏢 API Externa]
+        DB[🗄️ Database]
+    end
+    
+    subgraph "🔧 DRIVING ADAPTERS"
+        CTRL[📡 Controllers<br/>HTTP → Domain]
+        GUARD[🛡️ Guards<br/>Security → Domain]
+        CRON[⏰ Cron<br/>Schedule → Domain]
+    end
+    
+    subgraph "🏛️ DOMAIN"
+        UC[🎯 Use Cases]
+        PORT1[🔌 Output Ports]
+    end
+    
+    subgraph "🔌 DRIVEN ADAPTERS"  
+        REPO[🗄️ Repositories<br/>Domain → DB]
+        HTTP[🌍 HTTP Clients<br/>Domain → API]
+        MAIL[📧 Mailers<br/>Domain → Email]
+    end
+    
+    WEB --> CTRL
+    CLI --> GUARD
+    CTRL --> UC
+    GUARD --> UC
+    CRON --> UC
+    
+    UC --> PORT1
+    PORT1 --> REPO
+    PORT1 --> HTTP
+    PORT1 --> MAIL
+    
+    REPO --> DB
+    HTTP --> API_EXT
+    MAIL --> API_EXT
+    
+    classDef driving fill:#ffeb3b
+    classDef driven fill:#4caf50
+    
+    class CTRL,GUARD,CRON driving
+    class REPO,HTTP,MAIL driven
+```
+
+---
+
+### 📦 **DTOs (Data Transfer Objects)** - Los Contratos de Datos
+
+#### ¿Qué son los DTOs?
+- **Objetos simples** para transferir datos entre capas
+- **Contratos** que definen la estructura de requests/responses
+- **Sin lógica de negocio** - solo datos
+- **Inmutables** y **serializables**
+- **Desacoplamiento** entre frontend y backend
+
+#### 🔍 **Ejemplo: DTOs del Sistema**
+
+```typescript
+// 📄 src/modules/auth/application/dtos/token-validation-response.dto.ts
+
+/**
+ * 📤 RESPONSE DTO: Contrato de respuesta exitosa
+ * 
+ * Define exactamente qué datos recibe el frontend:
+ * - Mensaje confirmación
+ * - Info del usuario (sin datos sensibles)
+ * - Token renovado para próximas requests
+ */
+export class TokenValidationResponseDto {
+  readonly message: string;
+  readonly user: UserInfoDto;
+  readonly validatedToken: string;
+
+  constructor(message: string, user: UserInfoDto, validatedToken: string) {
+    this.message = message;
+    this.user = user;
+    this.validatedToken = validatedToken;
+  }
+
+  // 🏭 FACTORY: Crear respuesta exitosa estándar
+  static success(user: UserInfoDto, validatedToken: string): TokenValidationResponseDto {
+    return new TokenValidationResponseDto(
+      'Validación de token exitosa',
+      user,
+      validatedToken
+    );
+  }
+}
+
+/**
+ * 👤 USER DTO: Información básica del usuario
+ * 
+ * Solo datos SEGUROS para exponer al frontend:
+ * ✅ ID único, username, status de validación
+ * ❌ Passwords, emails completos, roles internos
+ */
+export class UserInfoDto {
+  readonly sub: string;
+  readonly username: string;  
+  readonly validated: boolean;
+
+  constructor(sub: string, username: string, validated: boolean = true) {
+    this.sub = sub;
+    this.username = username;
+    this.validated = validated;
+  }
+
+  // 🏭 FACTORY: Crear desde Entity de dominio
+  static fromToken(token: Token): UserInfoDto {
+    return new UserInfoDto(
+      token.sub,
+      token.username,
+      true
+    );
+  }
+
+  toString(): string {
+    return `User(sub: ${this.sub}, username: ${this.username})`;
+  }
+}
+
+// 📄 src/shared/application/dtos/error-response.dto.ts
+
+/**
+ * ❌ ERROR DTO: Contrato de respuesta de error
+ * 
+ * Estructura consistente para TODOS los errores:
+ * - Flag de error
+ * - Status code HTTP
+ * - Código de error específico
+ * - Mensaje legible
+ * - Timestamp y metadata
+ */
+export class ErrorResponseDto {
+  readonly error: boolean = true;
+  readonly statusCode: number;
+  readonly errorCode: string;
+  readonly message: string;
+  readonly timestamp: string;
+  readonly layer: string;
+
+  constructor(
+    statusCode: number,
+    errorCode: string,
+    message: string,
+    layer: string = 'Unknown'
+  ) {
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
+    this.message = message;
+    this.layer = layer;
+    this.timestamp = new Date().toISOString();
+  }
+
+  // 🏭 FACTORY: Crear desde Domain Exception
+  static fromDomainException(exception: DomainException, statusCode: number): ErrorResponseDto {
+    return new ErrorResponseDto(
+      statusCode,
+      exception.code,
+      exception.message,
+      'Domain'
+    );
+  }
+}
+```
+
+#### 🌟 **¿Por qué usar DTOs?**
+
+```mermaid
+graph TB
+    subgraph "❌ SIN DTOs - Problemas"
+        FE1[📱 Frontend]
+        BE1[🔧 Backend]
+        ENT1[📊 User Entity]
+        
+        FE1 -.->|"Depende directamente"| ENT1
+        BE1 --> ENT1
+        
+        PROB1[⚠️ Cambios internos<br/>rompen frontend]
+        PROB2[🔓 Datos sensibles<br/>expuestos]
+        PROB3[🔗 Acoplamiento<br/>fuerte]
+    end
+    
+    subgraph "✅ CON DTOs - Beneficios"
+        FE2[📱 Frontend] 
+        BE2[🔧 Backend]
+        DTO[📦 UserDto]
+        ENT2[📊 User Entity]
+        
+        FE2 -.->|"Depende del contrato"| DTO
+        BE2 --> DTO
+        BE2 --> ENT2
+        
+        BEN1[✅ API estable<br/>versioning fácil]
+        BEN2[🔒 Solo datos<br/>necesarios]
+        BEN3[🔓 Desacoplamiento<br/>total]
+    end
+    
+    classDef problem fill:#ffcdd2
+    classDef benefit fill:#c8e6c9
+    classDef dto fill:#fff3e0
+    
+    class PROB1,PROB2,PROB3 problem
+    class BEN1,BEN2,BEN3 benefit
+    class DTO dto
+```
+
+---
+
+### ❌ **EXCEPTIONS (Excepciones)** - El Sistema de Errores
+
+#### ¿Qué son las Domain Exceptions?
+- **Errores específicos del dominio** con significado de negocio
+- **Códigos únicos** para identificar cada tipo de error
+- **Mensajes descriptivos** para usuarios y desarrolladores
+- **Jerarquía organizada** con clase base común
+- **Traducibles a respuestas HTTP** via Exception Filters
+
+#### 🔍 **Ejemplo: Sistema de Excepciones**
+
+```typescript
+// 📄 src/shared/domain/exceptions/domain.exception.ts
+
+/**
+ * ❌ BASE EXCEPTION: Clase padre de todas las excepciones de dominio
+ * 
+ * ¿Por qué una clase base?
+ * - Comportamiento común (code, message, timestamp)
+ * - Facilita Exception Filters (catch DomainException)
+ * - Consistencia en toda la aplicación
+ * - Extensibilidad para metadata común
+ */
+export abstract class DomainException extends Error {
+  abstract readonly code: string;
+  readonly timestamp: Date;
+  readonly layer: string = 'Domain';
+
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+    this.timestamp = new Date();
+    
+    // Asegurar stack trace correcto
+    Error.captureStackTrace(this, this.constructor);
+  }
+
+  // 📄 Representación para logs
+  toString(): string {
+    return `[${this.code}] ${this.message}`;
+  }
+
+  // 📦 Serialización para APIs
+  toJSON() {
+    return {
+      name: this.name,
+      code: this.code,
+      message: this.message,
+      timestamp: this.timestamp.toISOString(),
+      layer: this.layer
+    };
+  }
+}
+
+// 📄 src/modules/auth/domain/exceptions/token.exception.ts
+
+/**
+ * 🔑 TOKEN EXCEPTIONS: Errores específicos de autenticación
+ */
+
+// 🚫 Token faltante
+export class MissingTokenException extends DomainException {
+  readonly code = 'MISSING_TOKEN';
+  
+  constructor() {
+    super('Token de autorización requerido');
+  }
+}
+
+// ❌ Token inválido
+export class InvalidTokenException extends DomainException {
+  readonly code = 'INVALID_TOKEN';
+  
+  constructor(detail?: string) {
+    const message = detail 
+      ? `Token inválido: ${detail}`
+      : 'El token proporcionado es inválido';
+    super(message);
+  }
+}
+
+// ⏰ Token expirado
+export class TokenExpiredException extends DomainException {
+  readonly code = 'TOKEN_EXPIRED';
+  
+  constructor() {
+    super('El token ha expirado');
+  }
+}
+
+// 📋 Claims inválidos
+export class InvalidTokenClaimsException extends DomainException {
+  readonly code = 'INVALID_TOKEN_CLAIMS';
+  
+  constructor(claimName: string) {
+    super(`Token contiene claim inválido: ${claimName}`);
+  }
+}
+
+// 🌍 Error de API externa
+export class UpstreamHttpException extends DomainException {
+  readonly code = 'UPSTREAM_HTTP_ERROR';
+  
+  constructor(
+    public readonly status: number,
+    message: string
+  ) {
+    super(`Error del servicio externo (${status}): ${message}`);
+  }
+}
+
+// 🔧 Error técnico de validación externa
+export class ExternalValidationException extends DomainException {
+  readonly code = 'EXTERNAL_VALIDATION_ERROR';
+  
+  constructor(technicalError: string) {
+    super('No se pudo validar el token con el servicio externo');
+    // Guardamos el error técnico para logs (no para el usuario)
+    this.stack = `${this.stack}\nCaused by: ${technicalError}`;
+  }
+}
+```
+
+#### 🛡️ **Exception Filters - Traducción a HTTP**
+
+```typescript
+// 📄 src/shared/infrastructure/filters/domain-exception.filter.ts
+
+/**
+ * 🛡️ EXCEPTION FILTER: Domain Exceptions → HTTP Responses
+ * 
+ * ¿Por qué necesitamos esto?
+ * - Las excepciones de dominio no conocen HTTP
+ * - Necesitamos mapear errores a status codes
+ * - Queremos respuestas consistentes
+ * - Logging centralizado de errores
+ */
+@Catch(DomainException)
+export class DomainExceptionFilter implements ExceptionFilter {
+  
+  constructor(
+    @Inject('ILoggerPort')
+    private readonly logger: ILoggerPort
+  ) {}
+
+  catch(exception: DomainException, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse();
+    const request = ctx.getRequest();
+    
+    // 🔄 MAPEO: Domain Exception → HTTP Status
+    const statusCode = this.getHttpStatusCode(exception);
+    
+    // 📦 RESPUESTA: Estructura consistente
+    const errorResponse = ErrorResponseDto.fromDomainException(exception, statusCode);
+    
+    // 📝 LOGGING: Error centralizado
+    this.logException(exception, request, statusCode);
+    
+    // 📤 ENVÍO: Respuesta HTTP
+    response
+      .status(statusCode)
+      .json(errorResponse);
+  }
+
+  private getHttpStatusCode(exception: DomainException): number {
+    const statusMap: Record<string, number> = {
+      'MISSING_TOKEN': 401,
+      'INVALID_TOKEN': 401,
+      'TOKEN_EXPIRED': 401,
+      'INVALID_TOKEN_CLAIMS': 401,
+      'EXTERNAL_VALIDATION_ERROR': 503,
+      'UPSTREAM_HTTP_ERROR': (exception as UpstreamHttpException).status || 502
+    };
+    
+    return statusMap[exception.code] || 500;
+  }
+
+  private logException(exception: DomainException, request: any, statusCode: number): void {
+    const logMessage = `${exception.code}: ${exception.message}`;
+    const context = `${request.method} ${request.url}`;
+    
+    if (statusCode >= 500) {
+      this.logger.error(logMessage, exception.stack, 'DomainExceptionFilter');
+    } else {
+      this.logger.warn(`${logMessage} - ${context}`, 'DomainExceptionFilter');
+    }
+  }
+}
+```
+
+#### 🌟 **Flujo Completo de Errores**
+
+```mermaid
+graph TB
+    START[💥 Error occurs in Domain]
+    
+    subgraph "🏛️ DOMAIN"
+        DS[🔧 Domain Service<br/>Detects business rule violation]
+        EXC[❌ Domain Exception<br/>new TokenExpiredException()]
+    end
+    
+    subgraph "📋 APPLICATION"
+        UC[🎯 Use Case<br/>Exception bubbles up]
+    end
+    
+    subgraph "🔧 INFRASTRUCTURE"
+        CTRL[📡 Controller<br/>Exception continues bubbling]
+        FILTER[🛡️ Exception Filter<br/>Catches DomainException]
+        RESP[📤 HTTP Response<br/>ErrorResponseDto]
+    end
+    
+    subgraph "🌍 CLIENT"
+        JSON[📱 Frontend receives<br/>Structured error JSON]
+    end
+    
+    START --> DS
+    DS --> EXC
+    EXC --> UC
+    UC --> CTRL
+    CTRL --> FILTER
+    FILTER --> RESP
+    RESP --> JSON
+    
+    classDef domain fill:#e8f5e8
+    classDef application fill:#f3e5f5
+    classDef infrastructure fill:#fff3e0
+    classDef client fill:#e1f5fe
+    
+    class DS,EXC domain
+    class UC application
+    class CTRL,FILTER,RESP infrastructure
+    class JSON client
+```
